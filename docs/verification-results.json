@@ -1,0 +1,57 @@
+{
+  "date": "2026-09-17",
+  "application": "Spice Client 0.1.0",
+  "real_peer": false,
+  "app_binary_sha256": "f889eacf2b8a7561395eee8092cfbcebec043ad25c6540fc5e48c76761dcffaf",
+  "commands": {
+    "make test": {
+      "registered_swift_tests": 38,
+      "passed": true,
+      "suite_totals": [
+        22,
+        7,
+        9
+      ]
+    },
+    "make simulate": {
+      "registered_swift_tests": 38,
+      "passed": true,
+      "suite_totals": [
+        22,
+        7,
+        9
+      ]
+    },
+    "make test-vendor": {
+      "registered_swift_tests": 897,
+      "passed": true,
+      "suite_totals": [
+        445,
+        36,
+        19,
+        13,
+        13,
+        57,
+        46,
+        7,
+        197,
+        64
+      ]
+    }
+  },
+  "simulation_receipt": {
+    "connections": 6,
+    "closed": 6,
+    "input_packets": 6,
+    "public_cookie_leaks": 0
+  },
+  "checks": {
+    "metal_compile": true,
+    "relocatable_dependencies": true,
+    "adhoc_signature": true,
+    "isolated_app_resources_and_startup": true,
+    "native_picker_and_confirmation_visual_check": true,
+    "release_notarization": false,
+    "organization_check_passed": false
+  }
+}
