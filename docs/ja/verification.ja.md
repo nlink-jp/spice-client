@@ -68,6 +68,15 @@ SDK 26.0 にリンクされていた。組織の他の Swift アプリで既に�
 このシミュレーションによる検証で v0.1.0 を公開することを決定した。実ピアのゲートは未完のまま。
 版数は `git describe` から取り、ビルドしたバンドルと最終アーカイブで照合する。
 
+リリース v0.1.0（2026-09-18）: `make package` でテスト、ビルド（リンク SDK 27.0）、entitlements なしの
+Hardened Runtime での Developer ID 署名を行い、Apple の公証サービスは Accepted を返した。チケットは staple 済みで、
+最終アーカイブに対する `verify-release` も通過した。公証済みバンドルは `--portal-smoke` で公開 HTTPS ページを
+読み込んだ。アーカイブから展開し quarantine 属性を付けた複製は `spctl --assess` で Notarized Developer ID として
+受理され、`--version` と `--resource-check` に応答した。バイナリは arm64 のみ。GitHub へアップロードした
+アーカイブを再ダウンロードして SHA-256 が一致した（`19f920fc362bcd27ae508392acf8a84d2dcab51a1dde4140398001152fb75131`、
+実行ファイルは `fdfac627d3161218c89ae07d032c866c22a06f758a12565deebd42310400093a`）。Homebrew cask は
+このアーカイブから生成した。`make test-vendor` と実ピアのゲートは上記のとおり未完。
+
 ## 再実行
 
 `make test`、`make test-vendor`、`make simulate`、`make build` の順に実行します。

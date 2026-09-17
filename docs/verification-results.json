@@ -2,7 +2,7 @@
   "date": "2026-09-17",
   "application": "Spice Client",
   "real_peer": false,
-  "app_binary_sha256": "1cbdfe23c5f5f0429e8e562aebf1618304c84adf3a35468696aba491e5fcdf36",
+  "app_binary_sha256": "fdfac627d3161218c89ae07d032c866c22a06f758a12565deebd42310400093a",
   "commands": {
     "make test": {
       "registered_swift_tests": 38,
@@ -51,12 +51,20 @@
     "adhoc_signature": true,
     "isolated_app_resources_and_startup": true,
     "native_picker_and_confirmation_visual_check": true,
-    "release_notarization": false,
-    "organization_check_passed": false,
-    "linked_sdk_matches_installed": true
+    "release_notarization": true,
+    "linked_sdk_matches_installed": true,
+    "notarized_bundle_portal_smoke": true,
+    "quarantined_copy_gatekeeper_accepted": true
   },
   "updated": "2026-09-18",
   "linked_macos_sdk": "27.0",
   "toolchain": "Xcode 27, Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1), macOS 27.0 (26A428)",
-  "placement": "lab-series"
+  "placement": "lab-series",
+  "release": {
+    "version": "v0.1.0",
+    "date": "2026-09-18",
+    "archive_sha256": "19f920fc362bcd27ae508392acf8a84d2dcab51a1dde4140398001152fb75131",
+    "url": "https://github.com/nlink-jp/spice-client/releases/tag/v0.1.0",
+    "homebrew_cask": "nlink-jp/tap/spice-client"
+  }
 }

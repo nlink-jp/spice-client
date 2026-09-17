@@ -83,6 +83,19 @@ to place the repository in `lab-series` and to release v0.1.0 on this simulation
 verification; the real-peer gate stays open. The version now comes from `git describe`
 and is checked in the built bundle and the final archive.
 
+Release v0.1.0 (2026-09-18): `make package` ran the tests, built the bundle (linked
+SDK 27.0), signed it with Developer ID under the Hardened Runtime without
+entitlements, and the Apple notary service returned Accepted; the ticket is stapled
+and `verify-release` passed on the final archive. The notarized bundle loaded a
+public HTTPS page through `--portal-smoke`. A copy extracted from the archive with
+a quarantine attribute was accepted by `spctl --assess` as Notarized Developer ID
+and answered `--version` and `--resource-check`; the binary is arm64 only. The
+archive uploaded to GitHub was downloaded back with an identical SHA-256
+(`19f920fc362bcd27ae508392acf8a84d2dcab51a1dde4140398001152fb75131`; executable
+`fdfac627d3161218c89ae07d032c866c22a06f758a12565deebd42310400093a`), and the
+Homebrew cask was generated from that archive. `make test-vendor` and the real-peer
+gate remain as stated above.
+
 ## Reproduce
 
 Run `make test`, `make test-vendor`, `make simulate`, then `make build`.
