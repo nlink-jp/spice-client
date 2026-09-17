@@ -1,6 +1,7 @@
 # 検証記録
 
-実施日: 2026-09-17。Apple Silicon、macOS 27、Xcode / Swift 6.3。
+実施日: 2026-09-17。Apple Silicon、macOS 27、Xcode 27 / Swift 6.4 ツールチェイン
+（Swift tools version 6.3。2026-09-18 訂正: 原文は tools version をツールチェインとして記していた）。
 対象 OS は macOS 26 以降ですが、最低対応版そのものでは別途試験していません。
 成果物はローカル開発ビルドであり、公開済み・公証済みリリースではありません。
 
@@ -62,7 +63,9 @@ SDK 26.0 にリンクされていた。組織の他の Swift アプリで既に�
 `make build` はリンク時に SDK を明示し、`make verify-release` と共にそれ以外のリンク先 SDK を拒否する。
 同一ホストで再実行: `make test`、`make simulate`（接続 6、入力パケット 6、範囲外 Cookie 漏えい 0 で同一）、
 `make build`（リンク SDK 27.0、警告なし）、新バンドルでの `--resource-check` と `--smoke-test`。
-`make test-vendor` と人手の GUI 確認は再実施していない。実ピア、公証、組織統合の各ゲートは未完のまま。
+`make test-vendor` と人手の GUI 確認は再実施していない。ユーザーはリポジトリを `lab-series` に置き、
+このシミュレーションによる検証で v0.1.0 を公開することを決定した。実ピアのゲートは未完のまま。
+版数は `git describe` から取り、ビルドしたバンドルと最終アーカイブで照合する。
 
 ## 再実行
 

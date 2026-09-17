@@ -8,15 +8,28 @@ macOS アプリです。spice-mac のアプリ本体を、接続内容の明示�
 
 ## 状態
 
-0.1.0 は Apple Silicon / macOS 26 以降向けの**ローカル開発ビルド**です。
-実装、自動回帰テスト、ループバックサーバーによるシミュレーションを用意しています。
-署名・公証済みのリリースは公開していません。実ゲストを用いた QEMU / Ravada との相互運用は
-未検証です。利用者の指定に従い、現在の接続試験はシミュレーションで行っています。
-実施範囲と限界は[検証記録](docs/ja/verification.ja.md)を参照してください。
+Spice Client は Apple Silicon / macOS 26 以降を対象とします。接続、ポータル、クリップボードの
+各境界は自動回帰テストとループバックサーバーによるシミュレーションで検証しています。
+実ゲストを用いた QEMU / Ravada との相互運用は未検証です。利用者の指定に従い、現在の接続試験は
+シミュレーションで行っています。実施範囲と限界は[検証記録](docs/ja/verification.ja.md)を参照してください。
+
+## インストール
+
+macOS 向けリリースは **Developer ID 署名と Apple 公証（staple 済み）**を施しています。
+Gatekeeper の警告なしに起動し、オフラインでも動作します。
+
+```sh
+brew tap nlink-jp/tap
+brew install --cask nlink-jp/tap/spice-client
+```
+
+または [Releases](https://github.com/nlink-jp/spice-client/releases) から
+`spice-client-vX.Y.Z-darwin-arm64.zip` をダウンロードして展開し、`Spice Client.app` を
+アプリケーションフォルダへ移動してください。
 
 ## 使い方
 
-1. ビルドした `dist/Spice Client.app` を開きます。
+1. Spice Client を開きます。
 2. `.vv` ファイルを開くかドロップします。ポータルの場合は HTTPS URL を入力してログインします。
 3. アプリ側の確認画面で送信元、接続先、ポート、通信の保護を確認します。
    クリップボード共有は初期 OFF です。「接続」で表示された内容への接続を開始します。
@@ -90,9 +103,9 @@ VM は不要で、システムの信頼設定を書き換えず、利用者の�
 [レビューと修正](docs/ja/review.ja.md) ·
 [検証](docs/ja/verification.ja.md)
 
-## 著作権・依存関係
+## ライセンス
 
-アプリ本体は MIT です。[Maspice](https://github.com/BeriBeli/spice-mac)（Ching367436 / BeriBeli）から
+アプリ本体は MIT です（[LICENSE](LICENSE)）。[Maspice](https://github.com/BeriBeli/spice-mac)（Ching367436 / BeriBeli）から
 仕様と一部の互換処理を継承し、[SwiftSpice](https://github.com/BeriBeli/spice-swift)を利用しています。
 [NOTICE.md](NOTICE.md)、[依存ライセンス](THIRD_PARTY_NOTICES.md)、`Vendor/` の固定ファイルハッシュとパッチを参照してください。
 LGPL を含むネイティブライブラリのライセンスはそのまま維持し、MIT への変更はしていません。

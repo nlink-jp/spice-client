@@ -9,16 +9,29 @@ protocol, display, input, audio, and guest integration.
 
 ## Status
 
-Version 0.1.0 is a **local development build**, for Apple Silicon and macOS 26+.
-Implementation, automated regressions, and a loopback server simulation are
-available. This repository has not published a signed/notarized release.
-QEMU/Ravada interoperability with a real guest remains unverified; the current
-verification uses simulation at the user's request. See the
+Spice Client targets Apple Silicon and macOS 26 or later. Automated regressions
+and a loopback server simulation cover the connection, portal, and clipboard
+boundaries. QEMU/Ravada interoperability with a real guest remains unverified;
+the verification uses simulation at the user's request. See the
 [verification record](docs/en/verification.md) for the tested scope and limits.
+
+## Install
+
+macOS releases are **Developer ID signed and Apple-notarized** (stapled). They
+launch without Gatekeeper prompts and work offline.
+
+```sh
+brew tap nlink-jp/tap
+brew install --cask nlink-jp/tap/spice-client
+```
+
+Or download `spice-client-vX.Y.Z-darwin-arm64.zip` from the
+[releases](https://github.com/nlink-jp/spice-client/releases), unpack it, and
+move `Spice Client.app` to Applications.
 
 ## Use
 
-1. Build and open `dist/Spice Client.app`.
+1. Open Spice Client.
 2. Open or drop a `.vv` file, or enter an HTTPS portal URL and sign in.
 3. Review the source, host, port, and protection in the native confirmation.
    Clipboard sharing starts OFF. Select **Connect** to start this exact plan.
@@ -101,9 +114,9 @@ Do not distribute a local build as a notarized release.
 [Review and fixes](docs/en/review.md) ·
 [Verification](docs/en/verification.md)
 
-## Attribution
+## License
 
-MIT application code. This work derives specifications and selected compatibility
+MIT (see [LICENSE](LICENSE)) for the application code. This work derives specifications and selected compatibility
 code from [Maspice](https://github.com/BeriBeli/spice-mac) (Ching367436 / BeriBeli).
 The backend is [SwiftSpice](https://github.com/BeriBeli/spice-swift).
 See [NOTICE.md](NOTICE.md), [third-party notices](THIRD_PARTY_NOTICES.md), and the

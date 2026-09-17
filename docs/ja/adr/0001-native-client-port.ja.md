@@ -8,6 +8,8 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | spice-mac 全体レビューに続く、新規移植と不具合修正の依頼 |
 
+改訂（2026-09-18）: ユーザーは §1 の `util-series` ではなく `lab-series` に配置することを決め、実ピアのゲートを未完のまま[検証記録](../verification.ja.md)に明記したうえで、シミュレーションによる検証で v0.1.0 を公開することを決定した。
+
 ## Context
 
 Apple Silicon の Mac から標準 QEMU / Ravada の仮想マシンに接続するための
@@ -28,8 +30,9 @@ Metal Toolchain 導入後、元プロジェクトの `make test` と `make build
 
 - リポジトリ名 `spice-client`、アプリ名 **Spice Client**、実行ファイル名
   `SpiceClient`、Bundle ID `jp.nlink.spice-client`。
-- 組織の `_wip/spice-client/` で開発する。所属は既存のネイティブ GUI 群と同じ
-  `util-series` とする。元の spice-mac 作業コピーは参照用に残す。
+- 組織の `_wip/spice-client/` で開発する。所属は `lab-series`（2026-09-18 改訂。
+  原文は既存のネイティブ GUI 群と同じ `util-series` としていた）。元の spice-mac
+  作業コピーは参照用に残す。
 - Swift 6.3 / Swift 6 strict concurrency、SwiftUI + 必要な AppKit、WebKit、Metal。
   初期対象は macOS 26 以降・arm64。SwiftSpice 0.4.2 のコミット
   `3f8de33a3c91fd7ed42d42b5970e644a8abf94b6` を検証済み基準として固定し、

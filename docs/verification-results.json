@@ -56,5 +56,7 @@
     "linked_sdk_matches_installed": true
   },
   "updated": "2026-09-18",
-  "linked_macos_sdk": "27.0"
+  "linked_macos_sdk": "27.0",
+  "toolchain": "Xcode 27, Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1), macOS 27.0 (26A428)",
+  "placement": "lab-series"
 }

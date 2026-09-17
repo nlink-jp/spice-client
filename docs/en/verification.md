@@ -1,6 +1,8 @@
 # Verification record
 
-Date: 2026-09-17. Local Apple Silicon host, macOS 27, Xcode/Swift 6.3.
+Date: 2026-09-17. Local Apple Silicon host, macOS 27, Xcode 27 with the Swift 6.4
+toolchain (Swift tools version 6.3; corrected 2026-09-18, the original text named
+the tools version as the toolchain).
 Deployment target: macOS 26. The minimum OS version has not been tested separately.
 This is a local development build, not a published or notarized release.
 
@@ -74,8 +76,10 @@ names the SDK at link time and, together with `make verify-release`, rejects any
 other linked SDK. Rerun on the same host: `make test`, `make simulate` (same six
 connections, six input packets, zero scoped-cookie leaks), `make build` (linked
 SDK 27.0, no warnings), `--resource-check` and `--smoke-test` on the new bundle.
-`make test-vendor` and the human GUI inspection were not repeated; the real-peer,
-notarization and organization gates remain open.
+`make test-vendor` and the human GUI inspection were not repeated. The user decided
+to place the repository in `lab-series` and to release v0.1.0 on this simulation-based
+verification; the real-peer gate stays open. The version now comes from `git describe`
+and is checked in the built bundle and the final archive.
 
 ## Reproduce
 

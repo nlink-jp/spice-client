@@ -10,6 +10,8 @@
 
 Implementation note (2026-09-17): the user requested simulation because no real peer is available. Local app, loopback protocol/WebKit tests, and review are delivered separately from real-guest and signed-release validation. See [verification](../verification.md).
 
+Amendment (2026-09-18): the user placed the repository in `lab-series` instead of the `util-series` named in §1, and decided to publish v0.1.0 on simulation-based verification while the real-peer gate stays open and is recorded as such in [verification](../verification.md).
+
 ## Context
 
 Build an Apple Silicon macOS SPICE client for standard QEMU and Ravada guests,
@@ -30,8 +32,9 @@ not validate the new implementation, real-peer interoperability, or binary safet
 
 - Repository `spice-client`, application **Spice Client**, executable
   `SpiceClient`, bundle ID `jp.nlink.spice-client`.
-- Develop under the organization's `_wip/spice-client/`. Use `util-series`,
-  alongside its existing native GUI applications. Preserve spice-mac as a reference.
+- Develop under the organization's `_wip/spice-client/`. Placement: `lab-series`
+  (amended 2026-09-18; the original text chose `util-series`, alongside its native
+  GUI applications). Preserve spice-mac as a reference.
 - Swift 6.3 with Swift 6 strict concurrency; SwiftUI with narrow AppKit, WebKit,
   and Metal integration. Initial platform: macOS 26 or later, arm64.
   Pin SwiftSpice 0.4.2 commit `3f8de33a3c91fd7ed42d42b5970e644a8abf94b6` as the
