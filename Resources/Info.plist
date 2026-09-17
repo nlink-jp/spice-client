@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>SpiceClient</string>
+<key>CFBundleName</key><string>Spice Client</string>
+<key>CFBundleDisplayName</key><string>Spice Client</string>
+<key>CFBundleIdentifier</key><string>jp.nlink.spice-client</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>0.1.0</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>LSMinimumSystemVersion</key><string>26.0</string>
+<key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+<key>LSMultipleInstancesProhibited</key><true/>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSHumanReadableCopyright</key><string>© 2026 nlink-jp. Based on Maspice and SwiftSpice; see bundled notices.</string>
+<key>CFBundleDocumentTypes</key><array><dict>
+<key>CFBundleTypeName</key><string>SPICE Connection File</string>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+<key>LSHandlerRank</key><string>Alternate</string>
+<key>LSItemContentTypes</key><array><string>org.spice-space.vv</string></array>
+</dict></array>
+<key>UTImportedTypeDeclarations</key><array><dict>
+<key>UTTypeIdentifier</key><string>org.spice-space.vv</string>
+<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.text</string></array>
+<key>UTTypeDescription</key><string>SPICE Connection File</string>
+<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>vv</string></array></dict>
+</dict></array>
+</dict></plist>
