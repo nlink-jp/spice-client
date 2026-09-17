@@ -29,11 +29,14 @@ X509_DIR="$(mktemp -d "$TICKET_DIR/x509.XXXXXX")"
 live_peer_make_x509 "$X509_DIR" || { echo "run: could not generate the TLS certificates" >&2; exit 1; }
 # A stale container of the same name is an interrupted earlier run.
 podman rm -f "$NAME" > /dev/null 2>&1 || true
+# One display head: the application presents a single display stream (ADR-0001),
+# and a second head makes QEMU tear down two display channels per client
+# disconnect, which is where it was seen to crash.
 # No --rm: a peer that dies mid-run must keep its exit status and log for the
 # gate to report. stop.sh removes the container; its lifetime is bounded by the
 # QEMU timeout below and by the stale-name removal at the next start.
 podman run --detach --name "$NAME" \
-    --cpus "${SPICE_CLIENT_LIVE_PEER_CPUS:-4}" --memory 2g \
+    --cpus "${SPICE_CLIENT_LIVE_PEER_CPUS:-4}" --memory 3g \
     --publish "127.0.0.1::5930" --publish "127.0.0.1::5931" \
     --volume "$ARTIFACTS:/guest:ro" \
     --volume "$TICKET_FILE:/run/spice-ticket:ro" \
@@ -41,10 +44,10 @@ podman run --detach --name "$NAME" \
     "$IMAGE" \
     timeout --signal=KILL "$LIFETIME" \
     qemu-system-aarch64 -nodefaults -no-user-config \
-        -machine virt,gic-version=3 -accel tcg -cpu cortex-a72 -smp 2 -m 1024 \
+        -machine virt,gic-version=3 -accel tcg -cpu cortex-a72 -smp 2 -m 2048 \
         -kernel /guest/vmlinuz-virt -initrd /guest/initramfs.cpio.gz \
         -append "console=ttyAMA0 panic=-1" \
-        -device virtio-gpu-pci,max_outputs=2 \
+        -device virtio-gpu-pci,max_outputs=1 \
         -device virtio-keyboard-pci -device virtio-mouse-pci \
         -device virtio-serial-pci -chardev spicevmc,id=vdagent,name=vdagent \
         -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
@@ -64,6 +67,20 @@ until [ "$(podman logs "$NAME" 2>&1 | grep -c '^GUEST monitoring /dev/input/even
     if (( SECONDS >= deadline )); then echo "run: guest input monitors not ready within 120s" >&2; exit 1; fi
     sleep 1
 done
+# The agent stack (dbus, spice-vdagentd, Xorg, spice-vdagent) comes after the base
+# markers. Its failure does not stop this run: the transport tests still run and
+# the gate fails on the missing agent receipts, which names the layer that broke.
+AGENT=0
+while true; do
+    podman logs "$NAME" 2>&1 | tr -d '\r' > "$ENV_FILE.log" || true
+    if live_peer_agent_status "$ENV_FILE.log"; then AGENT=1; break; fi
+    status=$?
+    if [ "$status" -eq 2 ]; then echo "run: guest agent stack failed: $(grep '^AGENT_ERROR' "$ENV_FILE.log" | head -n 1)" >&2; break; fi
+    alive || { echo "run: the peer container exited before the agent stack started" >&2; exit 1; }
+    if (( SECONDS >= deadline )); then echo "run: guest agent stack not started within 120s" >&2; break; fi
+    sleep 1
+done
+rm -f "$ENV_FILE.log"
 for published in "$PORT" "$TLS_PORT"; do
     until nc -z 127.0.0.1 "$published" > /dev/null 2>&1; do
         alive || { echo "run: the peer container exited before the listener was reachable" >&2; exit 1; }
@@ -78,5 +95,8 @@ done
     echo "SPICE_CLIENT_LIVE_PEER_TICKET=$TICKET"
     echo "SPICE_CLIENT_LIVE_PEER_TICKET_FILE=$TICKET_FILE"
     echo "SPICE_CLIENT_LIVE_PEER_CONTAINER=$NAME"
+    echo "SPICE_CLIENT_LIVE_PEER_AGENT=$AGENT"
 } > "$ENV_FILE"
-echo "run: live peer ready on 127.0.0.1:$PORT (TLS $TLS_PORT) after ${SECONDS}s; guest $(cat "$ARTIFACTS/guest.json")"
+# vdagent announces its capabilities shortly after Xorg; give it the settle upstream uses.
+if [ "$AGENT" = 1 ]; then sleep 5; fi
+echo "run: live peer ready on 127.0.0.1:$PORT (TLS $TLS_PORT, agent=$AGENT) after ${SECONDS}s; guest kernel $(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['kernel'])" "$ARTIFACTS/guest.json")"

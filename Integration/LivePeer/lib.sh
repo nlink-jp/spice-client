@@ -95,3 +95,75 @@ live_peer_remove_x509() {
     done
     rmdir "$1" 2> /dev/null || true
 }
+
+# $1 = guest log. Exit 0 once the agent stack started, 2 if it reported an
+# error, 1 while neither has happened.
+live_peer_agent_status() {
+    grep -c '^AGENT_STACK_STARTED\r*$' "$1" > /dev/null 2>&1 && return 0
+    grep -c '^AGENT_ERROR ' "$1" > /dev/null 2>&1 && return 2
+    return 1
+}
+
+# $1 = receipt written by LiveAgentTests, $2 = guest log. Walks the receipt in
+# order: a `delivered <token>` line must be followed, later in the log than the
+# previous match, by the guest observing that host text's SHA-256; a `withheld
+# <token>` must never appear anywhere; a `mode WxH` must be applied by Xorg
+# after the previous match, so a startup mode line cannot satisfy a later
+# request. Lines of any other shape are ignored.
+live_peer_agent_log_matches() {
+    python3 - "$1" "$2" <<'PY'
+import hashlib, sys
+receipt = open(sys.argv[1]).read().splitlines()
+log = [line.rstrip("\r") for line in open(sys.argv[2]).read().splitlines()]
+def sha(token):
+    return hashlib.sha256(f"spice-client host clipboard {token}".encode()).hexdigest()
+def find(predicate, start):
+    for index in range(start, len(log)):
+        if predicate(log[index]):
+            return index
+    return -1
+cursor = 0
+for line in receipt:
+    parts = line.split()
+    if len(parts) != 2:
+        continue
+    kind, token = parts
+    if kind == "delivered":
+        digest = sha(token)
+        index = find(lambda l: l.startswith("CLIPBOARD_OBSERVED ") and l.endswith("sha256=" + digest), cursor)
+        if index < 0:
+            sys.exit(f"live-peer: delivered token {token} was not observed by the guest after log line {cursor}")
+        cursor = index + 1
+    elif kind == "withheld":
+        digest = sha(token)
+        if any(l.endswith("sha256=" + digest) for l in log):
+            sys.exit(f"live-peer: withheld token {token} reached the guest")
+    elif kind == "mode":
+        index = find(lambda l: l == f"XRANDR_MODE {token}", cursor)
+        if index < 0:
+            sys.exit(f"live-peer: Xorg did not apply mode {token} after log line {cursor}")
+        cursor = index + 1
+    elif kind == "unapplied":
+        # A defect pinned as a fact: the mode must NOT arrive, so that the gate
+        # turns red the day the defect is fixed and the records must be updated.
+        index = find(lambda l: l == f"XRANDR_MODE {token}", cursor)
+        if index >= 0:
+            sys.exit(f"live-peer: mode {token} was applied after log line {cursor}; "
+                     "the second-resize defect recorded in ADR-0003 looks fixed — "
+                     "update LiveAgentTests and the verification record")
+PY
+}
+
+# $1 = artifacts directory, $2 = guest source directory. Exit 0 when guest.json
+# records the current init and build script, so a changed guest is rebuilt.
+live_peer_guest_current() {
+    test -s "$1/guest.json" || return 1
+    python3 - "$1/guest.json" "$(shasum -a 256 "$2/init" | cut -d' ' -f1)" "$(shasum -a 256 "$2/build-in-container.sh" | cut -d' ' -f1)" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+sys.exit(0 if data.get("init_sha256") == sys.argv[2] and data.get("build_sha256") == sys.argv[3] else 1)
+PY
+}

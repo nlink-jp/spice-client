@@ -1,27 +1,32 @@
 #!/bin/sh
-# Live peer guest init (ADR-0002). Derived from the SwiftSpice Apple/container
-# guest init (MIT, see NOTICE.md); this copy loads the virtio/DRM/input modules
-# because the Alpine virt kernel ships them as modules.
+# Live peer guest init (ADR-0002, ADR-0003). Derived from the SwiftSpice
+# Apple/container guest inits (MIT, see NOTICE.md). Layered: the base markers
+# come first, the agent stack second, the observers last, so a broken Xorg
+# fails only the agent tests.
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin HOME=/root DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
 mount -t devtmpfs devtmpfs /dev
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /run
 mount -t tmpfs tmpfs /tmp
-for module in virtio_pci virtio_gpu virtio_input evdev drm; do
+mkdir -p /dev/pts /dev/shm /run/dbus /run/spice-vdagentd "$XDG_RUNTIME_DIR" /tmp/.X11-unix
+chmod 0700 "$XDG_RUNTIME_DIR"
+mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /dev/shm
+# The Alpine virt kernel ships these as modules; spice-vdagentd exits without uinput.
+for module in virtio_pci virtio_gpu virtio_input evdev uinput drm; do
     if modprobe "$module" 2>/dev/null; then
         echo "GUEST loaded module $module"
     else
         echo "GUEST module $module built in or absent"
     fi
 done
+echo /sbin/mdev > /proc/sys/kernel/hotplug
+mdev -s
 sleep 2
 echo "GUEST dri: $(ls /dev/dri 2>/dev/null | tr '\n' ' ')"
 echo "GUEST input: $(ls /dev/input 2>/dev/null | tr '\n' ' ')"
 echo "GUEST fb: $(ls /dev/fb* 2>/dev/null | tr '\n' ' ')"
-if echo "spice-client live peer guest" > /dev/tty0 2>/dev/null; then
-    echo "GUEST tty0 ok"
-else
-    echo "GUEST tty0 unavailable"
-fi
 # Dump every input event as one hex line; the host requires the injected key here.
 (
     while true; do
@@ -45,10 +50,71 @@ fi
     done
 ) &
 echo "GUEST ready"
-# Keep the framebuffer changing so the display channel carries real frames.
-counter=0
-while true; do
-    echo "spice-client framebuffer tick $counter" > /dev/tty0 2>/dev/null
-    counter=$((counter + 1))
+
+# --- agent stack: dbus, spice-vdagentd, Xorg (modesetting on virtio-gpu), spice-vdagent ---
+agent_failed() { echo "AGENT_ERROR $1"; }
+dbus-uuidgen --ensure=/etc/machine-id
+dbus-daemon --system --fork --nopidfile
+attempt=0
+while ! test -e /dev/virtio-ports/com.redhat.spice.0; do
+    mdev -s
+    attempt=$((attempt + 1))
+    if test "$attempt" -ge 30; then agent_failed "virtio port unavailable"; break; fi
     sleep 1
 done
+if test -e /dev/virtio-ports/com.redhat.spice.0; then
+    spice-vdagentd --foreground --one-session &
+    Xorg :0 -ac -noreset -nolisten tcp -logfile /tmp/Xorg.0.log -config /etc/X11/xorg.conf &
+    attempt=0
+    while ! test -S /tmp/.X11-unix/X0; do
+        attempt=$((attempt + 1))
+        if test "$attempt" -ge 30; then agent_failed "Xorg unavailable"; tail -n 50 /tmp/Xorg.0.log 2>/dev/null; break; fi
+        sleep 1
+    done
+fi
+if test -S /tmp/.X11-unix/X0; then
+    dbus-run-session -- sh -c 'exec spice-vdagent --foreground' &
+    echo "AGENT_STACK_STARTED"
+    # Clipboard observer: log every change; answer a host token with a guest token.
+    (
+        last=""
+        while true; do
+            if ! text="$(xclip -selection clipboard -out 2>/dev/null)"; then
+                if test -n "$last"; then last=""; echo "CLIPBOARD_CLEARED"; fi
+            else
+                sum="$(printf '%s' "$text" | sha256sum | cut -d ' ' -f 1)"
+                if test "$sum" != "$last"; then
+                    last="$sum"
+                    echo "CLIPBOARD_OBSERVED bytes=$(printf '%s' "$text" | wc -c | tr -d ' ') sha256=$sum"
+                    case "$text" in
+                        "spice-client host clipboard "*)
+                            token="${text#spice-client host clipboard }"
+                            printf 'spice-client guest clipboard %s' "$token" | xclip -selection clipboard -in &
+                            echo "CLIPBOARD_OFFERED $token"
+                            ;;
+                    esac
+                fi
+            fi
+            sleep 0.5
+        done
+    ) &
+    # Mode observer: apply the preferred mode of Virtual-1 whenever it changes.
+    (
+        last=""
+        while true; do
+            mode="$(xrandr --query 2>/dev/null | awk '/^Virtual-1 connected/{f=1; next} /^[^ ]/{f=0} f && /\+/{print $1; exit}')"
+            if test -n "$mode" && test "$mode" != "$last"; then
+                # The X screen must follow the output: the scanout the SPICE server
+                # exports is the screen, so an output-only mode change leaves the
+                # client's surface at its old size.
+                if xrandr --fb "$mode" --output Virtual-1 --mode "$mode" 2>/dev/null; then
+                    last="$mode"
+                    echo "XRANDR_MODE $mode"
+                    echo "XRANDR_SCREEN $(xrandr --query 2>/dev/null | sed -n 's/^Screen 0:.*current \([0-9]*\) x \([0-9]*\).*/\1x\2/p')"
+                fi
+            fi
+            sleep 0.5
+        done
+    ) &
+fi
+while true; do sleep 60; done

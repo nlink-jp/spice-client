@@ -72,6 +72,65 @@ class GateChecks(unittest.TestCase):
             self.assertEqual(run(f'. ./lib.sh; live_peer_remove_x509 "{x509}"').returncode, 0)
             self.assertFalse(x509.exists())
 
+    def test_agent_status_distinguishes_started_error_and_pending(self):
+        with tempfile.TemporaryDirectory() as work:
+            log = Path(work) / 'guest.log'
+            log.write_text('GUEST ready\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_agent_status "{log}"').returncode, 1)
+            log.write_text('GUEST ready\nAGENT_ERROR Xorg unavailable\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_agent_status "{log}"').returncode, 2)
+            log.write_text('GUEST ready\nAGENT_STACK_STARTED\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_agent_status "{log}"').returncode, 0)
+            # The serial console ends lines with CR LF.
+            log.write_text('GUEST ready\r\nAGENT_STACK_STARTED\r\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_agent_status "{log}"').returncode, 0)
+
+    def test_agent_log_check_is_ordered_and_rejects_withheld_tokens(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as work:
+            receipt, log = Path(work) / 'receipt', Path(work) / 'guest.log'
+            sha = lambda token: hashlib.sha256(f'spice-client host clipboard {token}'.encode()).hexdigest()
+            receipt.write_text('clipboardFollowsSharingAndFocusInBothDirections\ndelivered aa\nwithheld bb\ndelivered cc\nlatency x 12\nmode 1024x768\nmode 1280x800\n')
+            good = f'XRANDR_MODE 1280x800\nCLIPBOARD_OBSERVED bytes=31 sha256={sha("aa")}\nCLIPBOARD_OBSERVED bytes=31 sha256={sha("cc")}\nXRANDR_MODE 1024x768\nXRANDR_MODE 1280x800\n'
+            log.write_text(good)
+            self.assertEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+            log.write_text(good.replace('\n', '\r\n'))
+            self.assertEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+            log.write_text(good + f'CLIPBOARD_OBSERVED bytes=31 sha256={sha("bb")}\n')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+            # The startup mode line alone must not satisfy the second request.
+            log.write_text(f'XRANDR_MODE 1280x800\nCLIPBOARD_OBSERVED bytes=31 sha256={sha("aa")}\nCLIPBOARD_OBSERVED bytes=31 sha256={sha("cc")}\nXRANDR_MODE 1024x768\n')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+            # Order matters: cc observed before aa is a failure.
+            log.write_text(f'CLIPBOARD_OBSERVED bytes=31 sha256={sha("cc")}\nCLIPBOARD_OBSERVED bytes=31 sha256={sha("aa")}\nXRANDR_MODE 1024x768\nXRANDR_MODE 1280x800\n')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+
+    def test_pinned_unapplied_mode_fails_when_the_mode_does_arrive(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as work:
+            receipt, log = Path(work) / 'receipt', Path(work) / 'guest.log'
+            receipt.write_text('mode 1024x768\nunapplied 1280x800\n')
+            # The mode the guest booted with precedes the request, which is fine.
+            log.write_text('XRANDR_MODE 1280x800\nXRANDR_MODE 1024x768\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+            # Applied after the first request: the defect is fixed, so the gate must fail.
+            log.write_text('XRANDR_MODE 1280x800\nXRANDR_MODE 1024x768\nXRANDR_MODE 1280x800\n')
+            result = run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('looks fixed', result.stdout + result.stderr)
+
+    def test_changed_guest_sources_invalidate_the_recorded_build(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as work:
+            record = Path(work) / 'guest.json'
+            init_sha = hashlib.sha256((LIVE / 'guest/init').read_bytes()).hexdigest()
+            build_sha = hashlib.sha256((LIVE / 'guest/build-in-container.sh').read_bytes()).hexdigest()
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_guest_current "{work}" guest').returncode, 0)
+            record.write_text(json.dumps({'init_sha256': init_sha, 'build_sha256': build_sha}))
+            self.assertEqual(run(f'. ./lib.sh; live_peer_guest_current "{work}" guest').returncode, 0)
+            record.write_text(json.dumps({'init_sha256': 'stale', 'build_sha256': build_sha}))
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_guest_current "{work}" guest').returncode, 0)
+
     def test_scripts_and_guest_init_parse(self):
         for script in sorted(LIVE.glob('*.sh')):
             self.assertEqual(subprocess.run(['bash', '-n', str(script)]).returncode, 0, script.name)
