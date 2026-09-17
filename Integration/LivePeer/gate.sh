@@ -20,8 +20,9 @@ finish() {
     status=$?
     trap - EXIT INT TERM
     if [ "$status" -ne 0 ]; then
-        echo "live-peer: FAILED (status $status); last guest/QEMU log lines:" >&2
-        podman logs "$NAME" 2>&1 | tail -n 60 >&2 || true
+        echo "live-peer: FAILED (status $status); peer container: $(podman inspect --format 'running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} finished={{.State.FinishedAt}}' "$NAME" 2>&1)" >&2
+        echo "live-peer: last guest/QEMU log lines (input events omitted):" >&2
+        podman logs "$NAME" 2>&1 | grep -v '^INPUT_EVENT\|^ [0-9a-f][0-9a-f] \|framebuffer tick' | tail -n 60 >&2 || true
     fi
     if [ -s "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi
     bash "$HERE/stop.sh"
@@ -37,7 +38,8 @@ set -a; . "$ENV_FILE"; set +a
 export SPICE_CLIENT_LIVE_PEER_RECEIPT="$RECEIPT"
 ( cd "$ROOT" && swift test --disable-sandbox -Xswiftc -warnings-as-errors --filter LivePeerTests )
 live_peer_tests_ran "$RECEIPT" connectsPresentsRealFramesDeliversInputAndReconnects wrongTicketFailsAuthenticationAndThePeerSurvives \
-    || { echo "live-peer: LivePeerTests did not run both tests; the suite skips silently without its environment" >&2; exit 1; }
+        connectsOverTLSWithTheFileCertificateAuthority connectsOverTLSWhenTheHostSubjectMatches rejectsADecoyAuthorityAndAWrongSubjectAndThePeerSurvives \
+    || { echo "live-peer: LivePeerTests did not run all five tests; the suite skips silently without its environment" >&2; exit 1; }
 podman logs "$NAME" > "$GUEST_LOG" 2>&1
 live_peer_guest_saw_key "$GUEST_LOG" || { echo "live-peer: the guest did not record the injected A key (evdev code 30 down)" >&2; exit 1; }
 HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD)"

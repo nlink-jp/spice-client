@@ -6,8 +6,9 @@
 - `make live-peer`: a real spice-server (QEMU 8.2, spice-server 0.15) in a Podman
   container with a minimal Alpine guest, driven through the application's own session
   path; verifies transport, ticket, display frames, cursor, injected input reaching the
-  guest, authentication failure and reconnection (ADR-0002). `make package` requires a
-  clean pass recorded for the release commit.
+  guest, authentication failure and reconnection, plus TLS with a per-run certificate
+  authority through the `.vv` `ca` and `host-subject` paths and refusal of a decoy
+  authority (ADR-0002). `make package` requires a clean pass recorded for the release commit.
 
 ## [0.1.0] - 2026-09-18
 

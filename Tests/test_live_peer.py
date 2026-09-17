@@ -53,6 +53,25 @@ class GateChecks(unittest.TestCase):
             self.assertIn('missing', result.stderr)
             self.assertFalse((Path(work) / 'env').exists())
 
+    def test_tls_material_is_a_verifiable_chain_with_a_decoy_that_signed_nothing(self):
+        with tempfile.TemporaryDirectory() as work:
+            x509 = Path(work) / 'x509'
+            self.assertEqual(run(f'. ./lib.sh; live_peer_make_x509 "{x509}"').returncode, 0)
+            for name in ('ca-cert.pem', 'server-cert.pem', 'server-key.pem', 'decoy-ca-cert.pem'):
+                self.assertTrue((x509 / name).stat().st_size > 0, name)
+                self.assertEqual((x509 / name).stat().st_mode & 0o777, 0o600, name)
+            verify = subprocess.run(['openssl', 'verify', '-CAfile', str(x509 / 'ca-cert.pem'), str(x509 / 'server-cert.pem')], capture_output=True, text=True)
+            self.assertEqual(verify.returncode, 0, verify.stderr)
+            decoy = subprocess.run(['openssl', 'verify', '-CAfile', str(x509 / 'decoy-ca-cert.pem'), str(x509 / 'server-cert.pem')], capture_output=True, text=True)
+            self.assertNotEqual(decoy.returncode, 0)
+            text = subprocess.run(['openssl', 'x509', '-noout', '-text', '-in', str(x509 / 'server-cert.pem')], capture_output=True, text=True).stdout
+            self.assertIn('IP Address:127.0.0.1', text)
+            self.assertIn('O=nlink-jp', text)
+            self.assertIn('CN=spice-client-live-peer', text)
+            self.assertEqual((x509 / 'subject.txt').read_text(), 'O=nlink-jp,CN=spice-client-live-peer')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_remove_x509 "{x509}"').returncode, 0)
+            self.assertFalse(x509.exists())
+
     def test_scripts_and_guest_init_parse(self):
         for script in sorted(LIVE.glob('*.sh')):
             self.assertEqual(subprocess.run(['bash', '-n', str(script)]).returncode, 0, script.name)

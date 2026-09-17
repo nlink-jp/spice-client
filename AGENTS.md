@@ -65,8 +65,9 @@ Image references under `Integration/` are digest-pinned and checked; never write
 under `Vendor/` (its file set is hash-checked). Inside the Podman machine QEMU binds
 `0.0.0.0`; the host publishes on `127.0.0.1` only. A stale container of the gate's
 name is removed on start, and QEMU runs under a 30-minute `timeout`, so an interrupted
-run cannot leave QEMU forever. The ticket is a per-run file under
-`~/.cache/spice-client/live-peer/` (removed by `stop.sh`), never an argument.
+run cannot leave QEMU forever. The ticket and the TLS material (CA, server
+certificate, decoy CA) are per-run files under `~/.cache/spice-client/live-peer/`
+(removed by `stop.sh`), never arguments.
 Do not publish, install, or change system preferences while testing fixtures.
 
 ## Implementation notes

@@ -1,12 +1,13 @@
 #!/bin/bash
-# Start one live peer container (ADR-0002) and write its port, ticket, ticket
-# file and name to the given environment file. The SPICE port is published on
+# Start one live peer container (ADR-0002) and write its ports, ticket, ticket
+# file, TLS material directory and name to the given environment file. The SPICE port is published on
 # loopback with an ephemeral host port (a retained forward from an earlier run
 # cannot be mistaken for this one); the ticket is random per run, handed to
 # QEMU as a file rather than an argument, and removed by stop.sh; QEMU itself
 # has a lifetime limit so an interrupted gate cannot leave it running forever.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/lib.sh"
 ENV_FILE="${1:?usage: run.sh <environment-file>}"
 IMAGE="${SPICE_CLIENT_LIVE_PEER_IMAGE:-localhost/spice-client-live-peer:local}"
 NAME="${SPICE_CLIENT_LIVE_PEER_CONTAINER:-spice-client-live-peer}"
@@ -23,13 +24,20 @@ TICKET_FILE="$(mktemp "$TICKET_DIR/ticket.XXXXXX")"
 chmod 600 "$TICKET_FILE"
 TICKET="$(openssl rand -hex 16)"
 printf '%s' "$TICKET" > "$TICKET_FILE"
+# Per-run TLS material (phase 1b): QEMU reads ca-cert/server-cert/server-key from x509-dir.
+X509_DIR="$(mktemp -d "$TICKET_DIR/x509.XXXXXX")"
+live_peer_make_x509 "$X509_DIR" || { echo "run: could not generate the TLS certificates" >&2; exit 1; }
 # A stale container of the same name is an interrupted earlier run.
 podman rm -f "$NAME" > /dev/null 2>&1 || true
-podman run --detach --rm --name "$NAME" \
+# No --rm: a peer that dies mid-run must keep its exit status and log for the
+# gate to report. stop.sh removes the container; its lifetime is bounded by the
+# QEMU timeout below and by the stale-name removal at the next start.
+podman run --detach --name "$NAME" \
     --cpus "${SPICE_CLIENT_LIVE_PEER_CPUS:-4}" --memory 2g \
-    --publish "127.0.0.1::5930" \
+    --publish "127.0.0.1::5930" --publish "127.0.0.1::5931" \
     --volume "$ARTIFACTS:/guest:ro" \
     --volume "$TICKET_FILE:/run/spice-ticket:ro" \
+    --volume "$X509_DIR:/run/x509:ro" \
     "$IMAGE" \
     timeout --signal=KILL "$LIFETIME" \
     qemu-system-aarch64 -nodefaults -no-user-config \
@@ -41,10 +49,12 @@ podman run --detach --rm --name "$NAME" \
         -device virtio-serial-pci -chardev spicevmc,id=vdagent,name=vdagent \
         -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
         -object secret,id=spice-password,file=/run/spice-ticket \
-        -spice port=5930,addr=0.0.0.0,password-secret=spice-password \
+        -spice port=5930,tls-port=5931,addr=0.0.0.0,x509-dir=/run/x509,password-secret=spice-password \
         -display none -serial stdio -monitor none -no-reboot > /dev/null
 PORT="$(podman port "$NAME" 5930/tcp | sed -n 's/^127\.0\.0\.1:\([0-9][0-9]*\)$/\1/p' | head -n 1)"
 test -n "$PORT" || { echo "run: podman did not publish 5930/tcp on 127.0.0.1" >&2; exit 1; }
+TLS_PORT="$(podman port "$NAME" 5931/tcp | sed -n 's/^127\.0\.0\.1:\([0-9][0-9]*\)$/\1/p' | head -n 1)"
+test -n "$TLS_PORT" || { echo "run: podman did not publish 5931/tcp on 127.0.0.1" >&2; exit 1; }
 alive() { test "$(podman inspect --format '{{.State.Running}}' "$NAME" 2> /dev/null)" = "true"; }
 deadline=$((SECONDS + 120))
 # Both virtio input devices must be monitored before a key is injected; evdev
@@ -54,15 +64,19 @@ until [ "$(podman logs "$NAME" 2>&1 | grep -c '^GUEST monitoring /dev/input/even
     if (( SECONDS >= deadline )); then echo "run: guest input monitors not ready within 120s" >&2; exit 1; fi
     sleep 1
 done
-until nc -z 127.0.0.1 "$PORT" > /dev/null 2>&1; do
-    alive || { echo "run: the peer container exited before the listener was reachable" >&2; exit 1; }
-    if (( SECONDS >= deadline )); then echo "run: SPICE listener not reachable on 127.0.0.1:$PORT within 120s" >&2; exit 1; fi
-    sleep 1
+for published in "$PORT" "$TLS_PORT"; do
+    until nc -z 127.0.0.1 "$published" > /dev/null 2>&1; do
+        alive || { echo "run: the peer container exited before the listener was reachable" >&2; exit 1; }
+        if (( SECONDS >= deadline )); then echo "run: SPICE listener not reachable on 127.0.0.1:$published within 120s" >&2; exit 1; fi
+        sleep 1
+    done
 done
 {
     echo "SPICE_CLIENT_LIVE_PEER_PORT=$PORT"
+    echo "SPICE_CLIENT_LIVE_PEER_TLS_PORT=$TLS_PORT"
+    echo "SPICE_CLIENT_LIVE_PEER_X509_DIR=$X509_DIR"
     echo "SPICE_CLIENT_LIVE_PEER_TICKET=$TICKET"
     echo "SPICE_CLIENT_LIVE_PEER_TICKET_FILE=$TICKET_FILE"
     echo "SPICE_CLIENT_LIVE_PEER_CONTAINER=$NAME"
 } > "$ENV_FILE"
-echo "run: live peer ready on 127.0.0.1:$PORT after ${SECONDS}s; guest $(cat "$ARTIFACTS/guest.json")"
+echo "run: live peer ready on 127.0.0.1:$PORT (TLS $TLS_PORT) after ${SECONDS}s; guest $(cat "$ARTIFACTS/guest.json")"

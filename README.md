@@ -96,9 +96,11 @@ support local verification.
 `make live-peer` needs Podman with a running machine. On first use it builds a
 QEMU image and a small Alpine guest (about 18 MB, kept outside git), then starts
 one container that publishes SPICE on loopback only with a per-run ticket,
-connects through the application's own session path, checks that the guest
-received the injected key, and stops the container. It does not cover audio,
-H.264, the Ravada portal, or the guest agent. `make package` refuses to release a
+connects through the application's own session path over plain TCP and over
+TLS with a per-run certificate authority (the `.vv` `ca` and `host-subject`
+paths, including refusal of a wrong authority), checks that the guest received
+the injected key, and stops the container. It does not cover audio, H.264, the
+Ravada portal, or the guest agent. `make package` refuses to release a
 commit without a clean `make live-peer` pass recorded for it.
 To regenerate the original icon, run `swift scripts/create-icon.swift` followed
 by `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns`.

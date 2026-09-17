@@ -70,8 +70,9 @@ Add `Integration/LivePeer/` to this repository:
   (attributed in `NOTICE.md`): mounts, `modprobe`, a console tick on `tty0`
   so the display keeps changing, and a raw dump of every `/dev/input/event*`
   as hex lines.
-- `run.sh` / `stop.sh` — start one detached container per run with `--rm`,
-  `--cpus` and `--memory` caps, the guest artifacts mounted read-only, the
+- `run.sh` / `stop.sh` — start one detached container per run (kept until
+  `stop.sh` removes it, so a peer that dies mid-run leaves its exit status and
+  log for the gate to report) with `--cpus` and `--memory` caps, the guest artifacts mounted read-only, the
   SPICE port published on `127.0.0.1` with an ephemeral host port read back
   from `podman port` (a forward retained by the Podman machine from an
   earlier run cannot be mistaken for this one), a per-run random ticket
@@ -122,9 +123,12 @@ path, `ConnectionPlan` → `SessionController` → SwiftSpice, not the probe:
 - The diagnostics summary never contains the ticket or the host.
 
 Audio, H.264, the Ravada portal, and the guest agent (clipboard, resize) are
-not asserted by this gate. Phase 1b adds a TLS listener (`tls-port` with a CA
-generated at container start and exported read-only) so the `.vv` CA path is
-exercised against a real server. Phase 2, the agent guest (Xorg and
+not asserted by this gate. Phase 1b (implemented 2026-09-18): the peer also
+listens on `tls-port` with a per-run CA and server certificate generated on the
+host by `lib.sh` and mounted read-only as QEMU's `x509-dir`; the gate connects
+through the `.vv` `ca` path, through `ca` plus `host-subject`, and proves that a
+decoy CA and a wrong subject are refused while the peer survives. Phase 2, the
+agent guest (Xorg and
 `spice-vdagent` from Alpine packages, as upstream does), is a separate
 decision once phase 1 has run for a release; it must fetch from the official
 Alpine CDN, not the third-party mirror the upstream script defaults to.
@@ -145,10 +149,10 @@ image is pushed to a registry.
 
 ### 4. Operation and safety
 
-The container mounts only the artifact directory and the ticket file, both
-read-only, publishes only on loopback, and dies with the run (`--rm`,
-trap-based stop, `-no-reboot`). A trap does not run on SIGKILL or host
-sleep, so two further bounds exist: QEMU runs under a 30-minute `timeout`,
+The container mounts only the artifact directory, the ticket file and the TLS
+material, all read-only, publishes only on loopback, and is removed by the
+trap-based stop (`-no-reboot` ends QEMU on a guest reboot). A trap does not
+run on SIGKILL or host sleep, so two further bounds exist: QEMU runs under a 30-minute `timeout`,
 and a stale container of the gate's name is removed at the next start. The
 ticket lives in the ticket file and the environment file of one run, both
 outside the repository and removed at stop; it does not appear in the

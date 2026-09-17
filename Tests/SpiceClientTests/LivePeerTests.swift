@@ -14,6 +14,8 @@ import SwiftSpiceAdapter
 struct LivePeerTests {
     let port = ProcessInfo.processInfo.environment["SPICE_CLIENT_LIVE_PEER_PORT"] ?? ""
     let ticket = ProcessInfo.processInfo.environment["SPICE_CLIENT_LIVE_PEER_TICKET"] ?? ""
+    let tlsPort = ProcessInfo.processInfo.environment["SPICE_CLIENT_LIVE_PEER_TLS_PORT"] ?? ""
+    let x509 = ProcessInfo.processInfo.environment["SPICE_CLIENT_LIVE_PEER_X509_DIR"] ?? ""
 
     /// Counts distinct frame revisions through a visible subscription, the way a
     /// window would; SessionController's `frames_presented` counts Metal draws
@@ -38,6 +40,20 @@ struct LivePeerTests {
     func plan(password: String) throws -> ConnectionPlan {
         // Parsed in memory, as the loopback suite does; nothing is written to disk.
         try ConnectionPlan.parse(Data("[virt-viewer]\ntype=spice\nhost=127.0.0.1\nport=\(port)\npassword=\(password)\n".utf8))
+    }
+    func file(_ name: String) throws -> String { try String(contentsOfFile: x509 + "/" + name, encoding: .utf8) }
+    /// A `.vv` that requires TLS: the parser prefers `tls-port`, and `ca` carries the
+    /// PEM with escaped newlines, as virt-viewer writes it.
+    func tlsPlan(ca: String, subject: String? = nil) throws -> ConnectionPlan {
+        var text = "[virt-viewer]\ntype=spice\nhost=127.0.0.1\nport=\(port)\ntls-port=\(tlsPort)\npassword=\(ticket)\n"
+        text += "ca=" + ca.replacingOccurrences(of: "\n", with: "\\n") + "\n"
+        if let subject { text += "host-subject=\(subject)\n" }
+        return try ConnectionPlan.parse(Data(text.utf8))
+    }
+    func refused(_ session: SessionController) async throws {
+        try await eventually { session.lifecycle.phase == .closed }
+        #expect(session.failure != nil)
+        #expect(session.lifecycle.phase == .closed)
     }
     func eventually(_ predicate: @MainActor () -> Bool, seconds: Double = 30) async throws {
         let deadline = ContinuousClock.now + .milliseconds(Int(seconds * 1000))
@@ -82,6 +98,39 @@ struct LivePeerTests {
         try await connected(second)
         try await closed(second)
         record("connectsPresentsRealFramesDeliversInputAndReconnects")
+    }
+
+    @Test func connectsOverTLSWithTheFileCertificateAuthority() async throws {
+        let plan = try tlsPlan(ca: try file("ca-cert.pem"))
+        #expect(plan.usesTLS)
+        let session = SessionController(plan: plan)
+        session.start()
+        try await connected(session)
+        #expect(session.inputAvailable)
+        try await closed(session)
+        record("connectsOverTLSWithTheFileCertificateAuthority")
+    }
+
+    @Test func connectsOverTLSWhenTheHostSubjectMatches() async throws {
+        let session = SessionController(plan: try tlsPlan(ca: try file("ca-cert.pem"), subject: try file("subject.txt")))
+        session.start()
+        try await connected(session)
+        try await closed(session)
+        record("connectsOverTLSWhenTheHostSubjectMatches")
+    }
+
+    @Test func rejectsADecoyAuthorityAndAWrongSubjectAndThePeerSurvives() async throws {
+        let decoy = SessionController(plan: try tlsPlan(ca: try file("decoy-ca-cert.pem")))
+        decoy.start()
+        try await refused(decoy)
+        let wrongSubject = SessionController(plan: try tlsPlan(ca: try file("ca-cert.pem"), subject: "O=nlink-jp,CN=someone-else"))
+        wrongSubject.start()
+        try await refused(wrongSubject)
+        let accepted = SessionController(plan: try tlsPlan(ca: try file("ca-cert.pem")))
+        accepted.start()
+        try await connected(accepted)
+        try await closed(accepted)
+        record("rejectsADecoyAuthorityAndAWrongSubjectAndThePeerSurvives")
     }
 
     @Test func wrongTicketFailsAuthenticationAndThePeerSurvives() async throws {
