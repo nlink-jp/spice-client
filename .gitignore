@@ -1,0 +1,8 @@
+.build/
+dist/
+.swiftpm/
+.DS_Store
+.claude/settings.local.json
+Vendor/SwiftSpice/.build/
+Vendor/SwiftSpice/.swiftpm/
+__pycache__/
