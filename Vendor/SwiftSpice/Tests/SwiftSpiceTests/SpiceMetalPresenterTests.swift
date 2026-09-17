@@ -1,0 +1,553 @@
+import AppKit
+import Foundation
+import Metal
+import SpiceIOSurface
+import SpiceRenderer
+import Testing
+@testable import SwiftSpice
+
+@Suite("Metal IOSurface presenter")
+@MainActor
+struct SpiceMetalPresenterTests {
+    @Test func locatesPresenterShaderInsideStandardMacOSResourceBundle() throws {
+        let fixture = try makeResourceBundleFixture(named: "SwiftSpice_SwiftSpice.bundle")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        let resolved = SpiceMetalPresenter.bundledShaderLibraryURL(
+            searchRoots: [fixture.root]
+        )
+
+        #expect(resolved?.standardizedFileURL == fixture.library.standardizedFileURL)
+        #expect(resolved?.deletingLastPathComponent().lastPathComponent == "Resources")
+    }
+
+    @Test func mapsAndPresentsIOSurfaceWithoutChangingPixels() async throws {
+        let store = makeIOSurfaceStore()
+        try await store.create(id: 12, width: 2, height: 1, format: 32)
+        try await store.fill(
+            surfaceID: 12,
+            rectangle: PixelRect(x: 0, y: 0, width: 2, height: 1),
+            colorARGB: 0x0011_2233
+        )
+        let frame = SpiceFrame(try await store.snapshot(surfaceID: 12))
+        let presenter = try #require(SpiceMetalPresenter())
+        let source = try #require(presenter.makeTexture(for: frame))
+        #expect(source.width == 2)
+        #expect(source.height == 1)
+        #expect(source.pixelFormat == .bgra8Unorm)
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: 2,
+            height: 1,
+            mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = [.renderTarget]
+        let destination = try #require(presenter.device.makeTexture(descriptor: descriptor))
+        let commandBuffer = try #require(presenter.makePresentationCommand(
+            source: source,
+            destination: destination,
+            retaining: frame
+        ))
+        await withCheckedContinuation { continuation in
+            commandBuffer.addCompletedHandler { _ in
+                continuation.resume()
+            }
+            commandBuffer.commit()
+        }
+        #expect(commandBuffer.status == .completed)
+        #expect(commandBuffer.error == nil)
+
+        var pixels = Data(count: 8)
+        pixels.withUnsafeMutableBytes { bytes in
+            destination.getBytes(
+                bytes.baseAddress!,
+                bytesPerRow: 8,
+                from: MTLRegionMake2D(0, 0, 2, 1),
+                mipmapLevel: 0
+            )
+        }
+        #expect(pixels == Data([
+            0x33, 0x22, 0x11, 0xff,
+            0x33, 0x22, 0x11, 0xff,
+        ]))
+    }
+
+    @Test func rejectsCPUOnlyFrame() throws {
+        let presenter = try #require(SpiceMetalPresenter())
+        let frame = SpiceFrame(
+            surfaceID: 1,
+            width: 1,
+            height: 1,
+            bytesPerRow: 4,
+            pixels: Data([1, 2, 3, 255])
+        )
+        #expect(presenter.makeTexture(for: frame) == nil)
+        guard case .cpuFallback(.missingIOSurface) = presenter.makeTextureResult(for: frame) else {
+            Issue.record("Expected the missing IOSurface fallback reason")
+            return
+        }
+    }
+
+    private func makeResourceBundleFixture(
+        named bundleName: String
+    ) throws -> (root: URL, library: URL) {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory.appending(
+            path: "swiftspice-presenter-bundle-\(UUID().uuidString)"
+        )
+        let bundle = root.appending(path: bundleName)
+        let contents = bundle.appending(path: "Contents")
+        let resources = contents.appending(path: "Resources")
+        try fileManager.createDirectory(at: resources, withIntermediateDirectories: true)
+        let info = try PropertyListSerialization.data(
+            fromPropertyList: [
+                "CFBundleIdentifier": "org.swiftspice.tests.metal-presenter",
+                "CFBundleName": "SwiftSpiceMetalPresenterTests",
+                "CFBundlePackageType": "BNDL",
+                "CFBundleVersion": "1",
+            ],
+            format: .xml,
+            options: 0
+        )
+        try info.write(to: contents.appending(path: "Info.plist"))
+        let library = resources.appending(path: "SpiceVideoCompositor.metallib")
+        try Data("fixture".utf8).write(to: library)
+        return (root, library)
+    }
+
+    @Test func recordsContentFreeFallbackReasons() {
+        let diagnostics = SpicePresentationDiagnostics()
+
+        diagnostics.recordMetalPresentedFrame()
+        diagnostics.recordMetalPresentedFrame(isAdvancedVideo: true)
+        diagnostics.recordCPUFallback(.missingIOSurface)
+        diagnostics.recordCPUFallback(.pixelFormatMismatch)
+        diagnostics.recordCPUFallback(.metalCommandFailure)
+        diagnostics.recordMetalPresentationError()
+        diagnostics.recordMetalFramesSupersededBeforeDraw(2)
+        diagnostics.recordMetalDrawableMiss()
+        diagnostics.recordMetalCommandCreationFailure()
+        diagnostics.recordMetalCommandBufferCommitted()
+        diagnostics.recordMetalTextureCacheHit()
+        diagnostics.recordMetalTextureCacheMiss()
+        diagnostics.recordMetalTextureCacheEviction()
+        diagnostics.recordMetalGPUBusySkip()
+        diagnostics.recordDesktopDisplayLinkWakeup()
+        diagnostics.recordDesktopDisplayLinkTick()
+        diagnostics.recordDesktopDisplayLinkIdlePause()
+        diagnostics.recordDesktopImmediateSelection()
+        diagnostics.recordDesktopReadyToDisplayLink(.milliseconds(2))
+        diagnostics.recordViewUpdateToMetalCommit(.milliseconds(3))
+        diagnostics.recordMetalCommitToCompletion(.milliseconds(4))
+        diagnostics.recordMetalRequestToPresented(.milliseconds(5))
+
+        let metrics = diagnostics.snapshot()
+        #expect(metrics.metalPresentedFrames == 2)
+        #expect(metrics.advancedVideoPresentedFrames == 1)
+        #expect(metrics.metalPresentationErrors == 1)
+        #expect(metrics.cpuFallbackFrames == 3)
+        #expect(metrics.missingIOSurfaceFallbackFrames == 1)
+        #expect(metrics.pixelFormatMismatchFallbackFrames == 1)
+        #expect(metrics.metalCommandFailureFallbackFrames == 1)
+        #expect(metrics.lastCPUFallbackReason == .metalCommandFailure)
+        #expect(metrics.metalFramesSupersededBeforeDraw == 2)
+        #expect(metrics.metalDrawableMisses == 1)
+        #expect(metrics.metalCommandCreationFailures == 1)
+        #expect(metrics.metalCommandBuffersCommitted == 1)
+        #expect(metrics.metalTextureCacheHits == 1)
+        #expect(metrics.metalTextureCacheMisses == 1)
+        #expect(metrics.metalTextureCacheEvictions == 1)
+        #expect(metrics.metalGPUBusySkips == 1)
+        #expect(metrics.desktopDisplayLinkWakeups == 1)
+        #expect(metrics.desktopDisplayLinkTicks == 1)
+        #expect(metrics.desktopDisplayLinkIdlePauses == 1)
+        #expect(metrics.desktopImmediateSelections == 1)
+        #expect(metrics.desktopReadyToDisplayLink.p95Milliseconds == 2)
+        #expect(metrics.viewUpdateToMetalCommit.p95Milliseconds == 3)
+        #expect(metrics.metalCommitToCompletion.p95Milliseconds == 4)
+        #expect(metrics.metalRequestToPresented.p95Milliseconds == 5)
+
+        let staleEpoch = diagnostics.currentEpoch()
+        diagnostics.reset()
+        #expect(diagnostics.snapshot() == .empty)
+        diagnostics.recordMetalPresentedFrame(isAdvancedVideo: true, epoch: staleEpoch)
+        diagnostics.recordMetalPresentationError(epoch: staleEpoch)
+        diagnostics.recordMetalCommitToCompletion(.seconds(1), epoch: staleEpoch)
+        diagnostics.recordMetalRequestToPresented(.seconds(1), epoch: staleEpoch)
+        #expect(diagnostics.snapshot() == .empty)
+
+        let currentEpoch = diagnostics.currentEpoch()
+        diagnostics.recordMetalPresentedFrame(isAdvancedVideo: true, epoch: currentEpoch)
+        #expect(diagnostics.snapshot().advancedVideoPresentedFrames == 1)
+    }
+
+    @Test func scalesIOSurfaceIntoBackingSizedTexture() async throws {
+        let store = makeIOSurfaceStore()
+        try await store.create(id: 13, width: 2, height: 1, format: 32)
+        try await store.fill(
+            surfaceID: 13,
+            rectangle: PixelRect(x: 0, y: 0, width: 2, height: 1),
+            colorARGB: 0x0011_2233
+        )
+        let frame = SpiceFrame(try await store.snapshot(surfaceID: 13))
+        let presenter = try #require(SpiceMetalPresenter())
+        let source = try #require(presenter.makeTexture(for: frame))
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: 4,
+            height: 2,
+            mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        let destination = try #require(presenter.device.makeTexture(descriptor: descriptor))
+        let commandBuffer = try #require(presenter.makePresentationCommand(
+            source: source,
+            destination: destination,
+            retaining: frame
+        ))
+        await withCheckedContinuation { continuation in
+            commandBuffer.addCompletedHandler { _ in
+                continuation.resume()
+            }
+            commandBuffer.commit()
+        }
+
+        #expect(commandBuffer.status == .completed)
+        #expect(commandBuffer.error == nil)
+        #expect(presenter.metrics().commandErrors == 0)
+
+        var pixels = Data(count: 32)
+        pixels.withUnsafeMutableBytes { bytes in
+            destination.getBytes(
+                bytes.baseAddress!,
+                bytesPerRow: 16,
+                from: MTLRegionMake2D(0, 0, 4, 2),
+                mipmapLevel: 0
+            )
+        }
+        let expectedPixel: [UInt8] = [0x33, 0x22, 0x11, 0xff]
+        let expectedPixels = Data((0..<8).flatMap { _ in expectedPixel })
+        #expect(pixels == expectedPixels)
+    }
+
+    @Test func reusesAtMostThreeIOSurfaceTextureWrappers() async throws {
+        let store = makeIOSurfaceStore(maximumFrames: 4)
+        try await store.create(id: 14, width: 2, height: 2, format: 32)
+        let frame = SpiceFrame(try await store.snapshot(surfaceID: 14))
+        var retainedFrames = [frame]
+        let presenter = try #require(SpiceMetalPresenter())
+
+        let first = try #require(presenter.makeTexture(for: frame))
+        let second = try #require(presenter.makeTexture(for: frame))
+
+        #expect(first === second)
+        for surfaceID: UInt32 in 16...18 {
+            try await store.create(id: surfaceID, width: 2, height: 2, format: 32)
+            let additionalFrame = SpiceFrame(
+                try await store.snapshot(surfaceID: surfaceID)
+            )
+            retainedFrames.append(additionalFrame)
+            _ = try #require(presenter.makeTexture(for: additionalFrame))
+        }
+        #expect(retainedFrames.count == 4)
+        let metrics = presenter.metrics()
+        #expect(metrics.textureCacheMisses == 4)
+        #expect(metrics.textureCacheHits == 1)
+        #expect(metrics.textureCacheEvictions == 1)
+        #expect(metrics.textureCacheEntries == SpiceMetalPresenter.maximumTextureCacheEntries)
+    }
+
+    @Test func limitsGPUCommandsToTwoWithoutBlocking() async throws {
+        let store = makeIOSurfaceStore()
+        try await store.create(id: 15, width: 1, height: 1, format: 32)
+        let frame = SpiceFrame(try await store.snapshot(surfaceID: 15))
+        let presenter = try #require(SpiceMetalPresenter())
+        let source = try #require(presenter.makeTexture(for: frame))
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: 1,
+            height: 1,
+            mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = [.renderTarget]
+        let destination = try #require(presenter.device.makeTexture(descriptor: descriptor))
+        let first = try #require(presenter.makePresentationCommand(
+            source: source,
+            destination: destination,
+            retaining: frame
+        ))
+        let second = try #require(presenter.makePresentationCommand(
+            source: source,
+            destination: destination,
+            retaining: frame
+        ))
+
+        #expect(presenter.makePresentationCommand(
+            source: source,
+            destination: destination,
+            retaining: frame
+        ) == nil)
+        #expect(presenter.metrics().inFlightCommands == 2)
+        #expect(presenter.metrics().maximumInFlightCommands == 2)
+        #expect(presenter.metrics().gpuBusySkips == 1)
+
+        await withCheckedContinuation { continuation in
+            first.addCompletedHandler { _ in continuation.resume() }
+            first.commit()
+        }
+        await withCheckedContinuation { continuation in
+            second.addCompletedHandler { _ in continuation.resume() }
+            second.commit()
+        }
+        #expect(presenter.metrics().inFlightCommands == 0)
+    }
+
+    @Test func usesNearestOnlyForOneToOneAndIntegerMagnification() {
+        #expect(SpiceMetalPresenter.samplingFilter(
+            sourceWidth: 640,
+            sourceHeight: 480,
+            destinationWidth: 640,
+            destinationHeight: 480
+        ) == .nearest)
+        #expect(SpiceMetalPresenter.samplingFilter(
+            sourceWidth: 640,
+            sourceHeight: 480,
+            destinationWidth: 1_280,
+            destinationHeight: 960
+        ) == .nearest)
+        #expect(SpiceMetalPresenter.samplingFilter(
+            sourceWidth: 640,
+            sourceHeight: 480,
+            destinationWidth: 1_024,
+            destinationHeight: 768
+        ) == .lanczos)
+    }
+
+    @Test func integerMagnificationKeepsPixelEdgesSharp() async throws {
+        let presenter = try #require(SpiceMetalPresenter())
+        let sourceDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: 2,
+            height: 1,
+            mipmapped: false
+        )
+        sourceDescriptor.storageMode = .shared
+        sourceDescriptor.usage = [.shaderRead]
+        let source = try #require(presenter.device.makeTexture(descriptor: sourceDescriptor))
+        let sourcePixels: [UInt8] = [
+            0, 0, 0, 255,
+            255, 255, 255, 255,
+        ]
+        sourcePixels.withUnsafeBytes { bytes in
+            source.replace(
+                region: MTLRegionMake2D(0, 0, 2, 1),
+                mipmapLevel: 0,
+                withBytes: bytes.baseAddress!,
+                bytesPerRow: 8
+            )
+        }
+        let destinationDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: 4,
+            height: 1,
+            mipmapped: false
+        )
+        destinationDescriptor.storageMode = .shared
+        destinationDescriptor.usage = [.renderTarget]
+        let destination = try #require(
+            presenter.device.makeTexture(descriptor: destinationDescriptor)
+        )
+        let frame = SpiceFrame(
+            surfaceID: 0,
+            width: 2,
+            height: 1,
+            bytesPerRow: 8,
+            pixels: Data(sourcePixels)
+        )
+        let commandBuffer = try #require(presenter.makePresentationCommand(
+            source: source,
+            destination: destination,
+            retaining: frame
+        ))
+        await withCheckedContinuation { continuation in
+            commandBuffer.addCompletedHandler { _ in continuation.resume() }
+            commandBuffer.commit()
+        }
+
+        var result = Data(count: 16)
+        result.withUnsafeMutableBytes { bytes in
+            destination.getBytes(
+                bytes.baseAddress!,
+                bytesPerRow: 16,
+                from: MTLRegionMake2D(0, 0, 4, 1),
+                mipmapLevel: 0
+            )
+        }
+        #expect(result == Data([
+            0, 0, 0, 255,
+            0, 0, 0, 255,
+            255, 255, 255, 255,
+            255, 255, 255, 255,
+        ]))
+    }
+
+    @Test func nonIntegerScaleUsesLanczosSampling() async throws {
+        let presenter = try #require(SpiceMetalPresenter())
+        let sourceDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: 4,
+            height: 1,
+            mipmapped: false
+        )
+        sourceDescriptor.storageMode = .shared
+        sourceDescriptor.usage = [.shaderRead]
+        let source = try #require(presenter.device.makeTexture(descriptor: sourceDescriptor))
+        let sourcePixels: [UInt8] = [
+            0, 0, 0, 255,
+            255, 255, 255, 255,
+            0, 0, 0, 255,
+            255, 255, 255, 255,
+        ]
+        sourcePixels.withUnsafeBytes { bytes in
+            source.replace(
+                region: MTLRegionMake2D(0, 0, 4, 1),
+                mipmapLevel: 0,
+                withBytes: bytes.baseAddress!,
+                bytesPerRow: 16
+            )
+        }
+        let destinationDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: 3,
+            height: 1,
+            mipmapped: false
+        )
+        destinationDescriptor.storageMode = .shared
+        destinationDescriptor.usage = [.renderTarget]
+        let destination = try #require(
+            presenter.device.makeTexture(descriptor: destinationDescriptor)
+        )
+        let frame = SpiceFrame(
+            surfaceID: 0,
+            width: 4,
+            height: 1,
+            bytesPerRow: 16,
+            pixels: Data(sourcePixels)
+        )
+        let commandBuffer = try #require(presenter.makePresentationCommand(
+            source: source,
+            destination: destination,
+            retaining: frame
+        ))
+        await withCheckedContinuation { continuation in
+            commandBuffer.addCompletedHandler { _ in continuation.resume() }
+            commandBuffer.commit()
+        }
+
+        var result = Data(count: 12)
+        result.withUnsafeMutableBytes { bytes in
+            destination.getBytes(
+                bytes.baseAddress!,
+                bytesPerRow: 12,
+                from: MTLRegionMake2D(0, 0, 3, 1),
+                mipmapLevel: 0
+            )
+        }
+        let first = Array(result[0..<4])
+        let middle = Array(result[4..<8])
+        let last = Array(result[8..<12])
+        // MPS Lanczos suppresses the alternating source's frequencies above
+        // the smaller destination's Nyquist limit instead of preserving the
+        // ringing/overshoot produced by the former unsharp-linear experiment.
+        #expect((84...88).contains(Int(first[0])))
+        #expect((127...128).contains(Int(middle[0])))
+        #expect((127...128).contains(Int(middle[1])))
+        #expect((127...128).contains(Int(middle[2])))
+        #expect((167...171).contains(Int(last[0])))
+        #expect(middle[3] == 255)
+    }
+
+    @Test func metalViewIsConfiguredForExplicitDrawableRequests() throws {
+        let view = try #require(SpiceMetalFrameView())
+        #expect(view.isPaused)
+        #expect(!view.enableSetNeedsDisplay)
+        #expect(!view.framebufferOnly)
+        #expect(!view.presentsWithTransaction)
+        #expect(!view.autoResizeDrawable)
+    }
+
+    @Test func explicitDrawCycleAdvancesDrawableAcrossPresentedFrames() async throws {
+        let store = makeIOSurfaceStore()
+        try await store.create(id: 91, width: 32, height: 32, format: 32)
+        try await store.fill(
+            surfaceID: 91,
+            rectangle: PixelRect(x: 0, y: 0, width: 32, height: 32),
+            colorARGB: 0x0011_2233
+        )
+        let frame = SpiceFrame(try await store.snapshot(surfaceID: 91))
+        let diagnostics = SpicePresentationDiagnostics()
+        let view = try #require(SpiceMetalFrameView(
+            presentationDiagnostics: diagnostics
+        ))
+        view.frame = NSRect(x: 0, y: 0, width: 32, height: 32)
+        _ = view.updateDrawableSize(backingScaleFactor: 1)
+
+        let window = NSWindow(
+            contentRect: view.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.orderFrontRegardless()
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+            window.close()
+        }
+
+        for _ in 0..<3 {
+            let outcome = await presentAndWait(frame, in: view)
+            #expect(outcome.result == .committed)
+            #expect(outcome.completion == .succeeded)
+        }
+
+        let metrics = diagnostics.snapshot()
+        #expect(metrics.metalCommandBuffersCommitted == 3)
+        #expect(metrics.metalPresentationErrors == 0)
+        #expect(metrics.cpuFallbackFrames == 0)
+    }
+
+    private func presentAndWait(
+        _ frame: SpiceFrame,
+        in view: SpiceMetalFrameView
+    ) async -> (
+        result: SpiceMetalFramePresentationResult,
+        completion: SpiceMetalCommandCompletion?
+    ) {
+        await withCheckedContinuation { continuation in
+            let result = view.present(
+                frame,
+                requestedAt: ContinuousClock().now
+            ) { completion in
+                continuation.resume(returning: (.committed, completion))
+            }
+            if result != .committed {
+                continuation.resume(returning: (result, nil))
+            }
+        }
+    }
+}
+
+private func makeIOSurfaceStore(maximumFrames: Int = 3) -> SurfaceStore {
+    SurfaceStore(
+        framePool: IOSurfaceFramePool(limits: .init(maximumFrames: maximumFrames)),
+        backingPolicy: .dataOnly
+    )
+}

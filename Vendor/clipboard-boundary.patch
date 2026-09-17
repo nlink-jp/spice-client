@@ -1,0 +1,339 @@
+diff --git a/Sources/SwiftSpice/SpiceClipboardManager.swift b/Sources/SwiftSpice/SpiceClipboardManager.swift
+--- a/Sources/SwiftSpice/SpiceClipboardManager.swift
++++ b/Sources/SwiftSpice/SpiceClipboardManager.swift
+@@ -91,6 +91,8 @@
+     private let displayConfigurationSupportContinuation:
+         AsyncStream<SpiceDisplayConfigurationSupport>.Continuation
+     private let fileTransferContinuation: AsyncStream<SpiceFileTransferEvent>.Continuation
++    private let pasteboardAccess: SpicePasteboardAccess?
++    private var clipboardAuthorization: SpicePasteboardAuthorization?
+     private let automaticallySynchronizesPasteboard: Bool
+     private var pasteboardSynchronizationEnabled: Bool
+     private let pollInterval: Duration
+@@ -142,6 +144,7 @@
+         automaticallySynchronizesPasteboard: Bool = true,
+         pasteboardSynchronizationEnabled: Bool = true,
+         pollInterval: Duration = .milliseconds(250),
++        pasteboardAccess: SpicePasteboardAccess? = nil,
+         maximumConcurrentFileTransfers: Int = 4,
+         maximumFileBytes: UInt64 = 8 * 1_024 * 1_024 * 1_024,
+         fileTransferChunkBytes: Int = 16_000
+@@ -170,6 +173,7 @@
+         )
+         fileTransferEvents = filePipe.stream
+         fileTransferContinuation = filePipe.continuation
++        self.pasteboardAccess = pasteboardAccess
+         self.automaticallySynchronizesPasteboard = automaticallySynchronizesPasteboard
+         self.pasteboardSynchronizationEnabled = pasteboardSynchronizationEnabled
+         self.pollInterval = max(.milliseconds(10), pollInterval)
+@@ -240,6 +244,8 @@
+             guard isCurrentStartingRun(runKey, session: session) else { return }
+         }
+         let agentConnection = await session.currentAgentConnectionSnapshot()
++        guard isCurrentStartingRun(runKey, session: session) else { return }
++        await refreshClipboardAuthorization()
+         guard isCurrentStartingRun(runKey, session: session) else { return }
+         currentAgentConnectionGeneration = agentConnection.generation
+         currentSessionLifecycleID = agentConnection.sessionLifecycleID
+@@ -546,6 +552,8 @@
+     /// Checks the current pasteboard immediately rather than waiting for the
+     /// optional polling loop.
+     public func synchronizePasteboard() async {
++        await refreshClipboardAuthorization()
++        let authorization = clipboardAuthorization
+         guard pasteboardSynchronizationEnabled,
+               let operation = beginActiveAgentOperation() else {
+             return
+@@ -557,8 +565,9 @@
+             expectedConnectionGeneration: operation.connectionGeneration
+         )
+         guard isCurrent(operation) else { return }
+-        let snapshot = await SpicePasteboardBridge.snapshot()
+-        guard isCurrent(operation) else { return }
++        guard let snapshot = await readPasteboard(authorization),
++              await isClipboardAuthorizationCurrent(authorization),
++              isCurrent(operation) else { return }
+         await execute(state.localPasteboardChanged(
+             changeCount: snapshot.changeCount,
+             text: snapshot.text
+@@ -575,6 +584,8 @@
+ 
+     /// Publishes text locally and offers it to the guest without polling delay.
+     public func publish(_ text: String) async {
++        await refreshClipboardAuthorization()
++        let authorization = clipboardAuthorization
+         guard pasteboardSynchronizationEnabled else { return }
+         let operation = beginActiveAgentOperation()
+         defer {
+@@ -582,12 +593,14 @@
+         }
+         let snapshot: SpicePasteboardSnapshot
+         do {
+-            snapshot = try await SpicePasteboardBridge.write(text: text)
++            guard let value = try await writePasteboard(text, authorization: authorization) else { return }
++            snapshot = value
+         } catch {
+             emit(.failed(error))
+             return
+         }
+-        guard let operation, isCurrent(operation) else {
++        guard await isClipboardAuthorizationCurrent(authorization),
++              let operation, isCurrent(operation) else {
+             return
+         }
+         await execute(state.localPasteboardChanged(
+@@ -601,13 +614,15 @@
+     public func setPasteboardSynchronizationEnabled(_ enabled: Bool) async {
+         guard pasteboardSynchronizationEnabled != enabled else { return }
+         pasteboardSynchronizationEnabled = enabled
++        // A custom access boundary also constrains capability state.
++        await refreshClipboardAuthorization(force: true)
+         guard let operation = beginActiveAgentOperation() else {
+-            _ = state.setClipboardEnabled(enabled)
++            _ = state.setClipboardEnabled(enabled && (clipboardAuthorization?.allowed ?? true))
+             return
+         }
+         defer { finishActiveAgentOperation() }
+         await execute(
+-            state.setClipboardEnabled(enabled),
++            state.setClipboardEnabled(enabled && (clipboardAuthorization?.allowed ?? true)),
+             using: operation.session,
+             expectedConnectionGeneration: operation.connectionGeneration
+         )
+@@ -745,6 +760,8 @@
+         runKey: RunKey
+     ) async {
+         guard isCurrentRun(runKey, session: session) else { return }
++        await refreshClipboardAuthorization()
++        guard isCurrentRun(runKey, session: session) else { return }
+         let event = envelope.event
+         let expectedConnectionGeneration = envelope.connectionGeneration
+         if let eventProcessingHook {
+@@ -774,11 +791,14 @@
+             )
+             emitDisplayConfigurationSupportIfChanged()
+             if automaticallySynchronizesPasteboard, pasteboardSynchronizationEnabled {
+-                let snapshot = await SpicePasteboardBridge.snapshot()
++                let authorization = clipboardAuthorization
++                if let snapshot = await readPasteboard(authorization),
++                   await isClipboardAuthorizationCurrent(authorization) {
+                 await execute(state.localPasteboardChanged(
+                     changeCount: snapshot.changeCount,
+                     text: snapshot.text
+                 ), using: session, expectedConnectionGeneration: expectedConnectionGeneration)
++                }
+             }
+             await sendPendingDisplayConfiguration(
+                 using: session,
+@@ -1225,6 +1245,7 @@
+     }
+ 
+     private func performPeriodicWork() async {
++        await refreshClipboardAuthorization()
+         guard let operation = beginActiveAgentOperation() else { return }
+         defer { finishActiveAgentOperation() }
+         if automaticallySynchronizesPasteboard, pasteboardSynchronizationEnabled {
+@@ -1695,6 +1716,7 @@
+         expectedConnectionGeneration: UInt64? = nil
+     ) async {
+         guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
++        let authorization = clipboardAuthorization
+         var work = pendingActions
+         pendingActions.removeAll(keepingCapacity: true)
+         for action in actions where !work.contains(action) {
+@@ -1702,7 +1724,8 @@
+         }
+ 
+         for (index, action) in work.enumerated() {
+-            guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
++            guard await isClipboardAuthorizationCurrent(authorization),
++                  isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
+             switch action {
+             case let .send(command):
+                 let isCapabilityAnnouncement: Bool
+@@ -1724,6 +1747,7 @@
+                         expectedConnectionGeneration: expectedConnectionGeneration
+                     )
+                     guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
++                    guard await isClipboardAuthorizationCurrent(authorization) else { return }
+                     state.didSend(command)
+                     if isCapabilityAnnouncement {
+                         wireDiagnostics.capabilityAnnouncementsSent &+= 1
+@@ -1733,6 +1757,7 @@
+                     if isCapabilityAnnouncement {
+                         wireDiagnostics.capabilityAnnouncementFailures &+= 1
+                     }
++                    guard await isClipboardAuthorizationCurrent(authorization) else { return }
+                     pendingActions = Array(work[index...])
+                     recordClipboardFailure(.transport)
+                     emit(.failed(.transport(error)))
+@@ -1748,11 +1773,13 @@
+                 }
+             case let .writeGuestText(text):
+                 do {
+-                    let snapshot = try await SpicePasteboardBridge.write(text: text)
++                    guard let snapshot = try await writePasteboard(text, authorization: authorization) else { continue }
+                     guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
++                    guard await isClipboardAuthorizationCurrent(authorization) else { return }
+                     state.didWriteGuestText(changeCount: snapshot.changeCount)
+                 } catch {
+                     guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
++                    guard await isClipboardAuthorizationCurrent(authorization) else { return }
+                     pendingActions = Array(work[index...])
+                     recordClipboardFailure(.pasteboardWrite)
+                     emit(.failed(error))
+@@ -1762,6 +1789,37 @@
+                 emit(event)
+             }
+         }
++    }
++
++    // The authorization epoch also drops cached local text and pending actions.
++    // A focus off/on cycle must not reauthorize work made under the old grant.
++    private func refreshClipboardAuthorization(force: Bool = false) async {
++        guard let pasteboardAccess else { return }
++        let current = await pasteboardAccess.authorization()
++        guard force || current != clipboardAuthorization else { return }
++        clipboardAuthorization = current
++        // Drop the old epoch's text, but retain the new epoch's release,
++        // capabilities and state notifications. These carry no old payload.
++        pendingActions = state.setClipboardEnabled(false)
++        pendingActions += state.setClipboardEnabled(current.allowed && pasteboardSynchronizationEnabled)
++    }
++
++    private func isClipboardAuthorizationCurrent(_ expected: SpicePasteboardAuthorization?) async -> Bool {
++        guard let pasteboardAccess else { return true }
++        let current = await pasteboardAccess.authorization()
++        return current == expected && clipboardAuthorization == expected
++    }
++
++    private func readPasteboard(_ authorization: SpicePasteboardAuthorization?) async -> SpicePasteboardSnapshot? {
++        guard let pasteboardAccess else { return await SpicePasteboardBridge.snapshot() }
++        guard let authorization, authorization.allowed else { return nil }
++        return await pasteboardAccess.snapshot(authorization.generation)
++    }
++
++    private func writePasteboard(_ text: String, authorization: SpicePasteboardAuthorization?) async throws(SpiceClipboardError) -> SpicePasteboardSnapshot? {
++        guard let pasteboardAccess else { return try await SpicePasteboardBridge.write(text: text) }
++        guard let authorization, authorization.allowed else { return nil }
++        return try await pasteboardAccess.write(authorization.generation, text)
+     }
+ 
+     private func recordInboundMessage(_ message: SpiceAgentMessage) {
+diff --git a/Tests/SwiftSpiceTests/SpiceSessionTests.swift b/Tests/SwiftSpiceTests/SpiceSessionTests.swift
+--- a/Tests/SwiftSpiceTests/SpiceSessionTests.swift
++++ b/Tests/SwiftSpiceTests/SpiceSessionTests.swift
+@@ -3806,6 +3806,59 @@
+         await session.disconnect()
+     }
+ 
++    // Local spice-client boundary regression: drives the real manager and wire.
++    @Test @MainActor func injectedClipboardRevocationReleasesAndReannouncesWithoutHostAccess() async throws {
++        let transport = StreamingSessionTransport(initial: try makeServerTranscript(
++            channels: [], agentConnected: 1, agentTokens: 64
++        ))
++        let session = SpiceSession(transportFactory: { _ in transport }, ticketEncryptor: SessionTicketEncryptor())
++        _ = try await session.connect(endpoint: SpiceEndpoint(host: "fixture.invalid", port: 5900),
++                                      credentials: SpiceCredentials(password: "secret"))
++        let host = InjectedPasteboardFixture()
++        let manager = SpiceAgentManager(automaticallySynchronizesPasteboard: false, pasteboardAccess: host.access)
++        try await manager.start(session: session)
++        let observed = Mutex<[SpiceClipboardEvent]>([])
++        let observer = Task {
++            for await event in manager.events { observed.withLock { $0.append(event) } }
++        }
++        let capabilities = try VDAgentClipboardCodec.encode(.announceCapabilities(requestReply: false, capabilities: .desktopIntegration))
++        let packet = try #require(VDAgentWireEncoder.fragments(for: capabilities).first)
++        await transport.enqueue(encodeMini(id: 109, body: packet))
++        for _ in 0..<200 {
++            if observed.withLock({ $0.contains(.ready) }) { break }
++            try await Task.sleep(for: .milliseconds(5))
++        }
++        #expect(observed.withLock { $0.contains(.ready) })
++        await manager.synchronizePasteboard()
++        #expect(host.reads > 0)
++        let readsBefore = host.reads
++        host.authorization = .init(generation: 2, allowed: false)
++        await manager.synchronizePasteboard()
++        #expect(host.reads == readsBefore)
++        host.authorization = .init(generation: 3, allowed: true)
++        await manager.synchronizePasteboard()
++        for _ in 0..<200 {
++            if observed.withLock({ $0.filter { $0 == .ready }.count >= 2 }) { break }
++            try await Task.sleep(for: .milliseconds(5))
++        }
++        #expect(observed.withLock { $0.contains(.unavailable) })
++        #expect(observed.withLock { $0.filter { $0 == .ready }.count } == 2)
++        let outbound = await transport.outbound
++        let agentPackets = try outbound.compactMap { packet -> Data? in
++            guard packet.count >= 6, try decodeMiniMessageID(packet) == 107 else { return nil }
++            return try decodeMiniBody(packet)
++        }
++        var decoder = VDAgentStreamDecoder()
++        let messages = try agentPackets.flatMap { try decoder.append(packet: $0) }
++        let commands = try messages.compactMap { try VDAgentClipboardCodec.decode($0) }
++        #expect(commands.contains(.release))
++        #expect(host.writes == 0)
++        await session.disconnect()
++        await manager.stop()
++        observer.cancel()
++        await observer.value
++    }
++
+     private func displayChannelIDs(count: Int) -> [SpiceChannelID] {
+         (0..<count).map { SpiceChannelID(type: 2, id: UInt8($0)) }
+     }
+@@ -4620,3 +4673,22 @@
+     }
+     Issue.record("session WebDAV server diagnostics did not reach the expected state")
+ }
++
++// Private fake pasteboard: these tests never touch the operator's clipboard.
++@MainActor
++private final class InjectedPasteboardFixture {
++    var authorization = SpicePasteboardAuthorization(generation: 1, allowed: true)
++    var reads = 0
++    var writes = 0
++    var access: SpicePasteboardAccess {
++        SpicePasteboardAccess(authorization: { self.authorization }, snapshot: { generation in
++            guard self.authorization.allowed, self.authorization.generation == generation else { return nil }
++            self.reads += 1
++            return .init(changeCount: 1, text: "synthetic host clipboard")
++        }, write: { generation, _ throws(SpiceClipboardError) in
++            guard self.authorization.allowed, self.authorization.generation == generation else { return nil }
++            self.writes += 1
++            return .init(changeCount: 2, text: "synthetic guest clipboard")
++        })
++    }
++}
+diff --git a/Sources/SwiftSpice/SpicePasteboardAccess.swift b/Sources/SwiftSpice/SpicePasteboardAccess.swift
+--- /dev/null
++++ b/Sources/SwiftSpice/SpicePasteboardAccess.swift
+@@ -0,0 +1,27 @@
++// Local spice-client patch: injectable host boundary; upstream defaults preserved.
++import Foundation
++
++public struct SpicePasteboardAuthorization: Sendable, Equatable {
++    public let generation: UInt64
++    public let allowed: Bool
++    public init(generation: UInt64, allowed: Bool) {
++        self.generation = generation; self.allowed = allowed
++    }
++}
++
++/// The consumer owns permission on MainActor. Every actual access must validate
++/// the supplied generation before touching the pasteboard. nil means denied,
++/// not an empty clipboard. Calls already submitted to transport are in flight.
++public struct SpicePasteboardAccess: Sendable {
++    public let authorization: @MainActor @Sendable () -> SpicePasteboardAuthorization
++    public let snapshot: @MainActor @Sendable (UInt64) -> SpicePasteboardSnapshot?
++    public let write: @MainActor @Sendable (UInt64, String) throws(SpiceClipboardError) -> SpicePasteboardSnapshot?
++
++    public init(
++        authorization: @escaping @MainActor @Sendable () -> SpicePasteboardAuthorization,
++        snapshot: @escaping @MainActor @Sendable (UInt64) -> SpicePasteboardSnapshot?,
++        write: @escaping @MainActor @Sendable (UInt64, String) throws(SpiceClipboardError) -> SpicePasteboardSnapshot?
++    ) {
++        self.authorization = authorization; self.snapshot = snapshot; self.write = write
++    }
++}

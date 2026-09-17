@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+DerivedData/
+Integration/AppleContainer/Artifacts/
+*.xcodeproj/
+xcuserdata/
+.DS_Store

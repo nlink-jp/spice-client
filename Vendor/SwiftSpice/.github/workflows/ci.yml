@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swiftpm:
+    name: Apple Silicon SwiftPM
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Report toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          swift --version
+
+      - name: Install Metal shader toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Check build environment
+        run: ./Scripts/doctor.sh
+
+      - name: Check release metadata
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            ./Scripts/check-version.sh "$GITHUB_REF_NAME"
+          else
+            ./Scripts/check-version.sh
+          fi
+
+      - name: Verify generated protocol sources
+        run: swift package --allow-writing-to-package-directory generate-spice-protocol --check
+
+      - name: Analyze C shims
+        run: ./Scripts/analyze-c-shims.sh
+
+      - name: Build
+        run: ./Scripts/build-lib.sh
+
+      - name: Verify public diagnostics API
+        run: >-
+          swift build --disable-sandbox
+          --package-path Tests/PublicAPIConsumer
+          -Xswiftc -warnings-as-errors
+
+      - name: Test
+        run: >-
+          swift test --disable-sandbox
+          --no-parallel
+          -Xswiftc -warnings-as-errors
+
+      - name: Test with AddressSanitizer
+        run: ./Scripts/test-address-sanitizer.sh
+
+      - name: Enforce code coverage baseline
+        run: ./Scripts/check-code-coverage.sh
