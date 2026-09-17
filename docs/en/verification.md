@@ -110,8 +110,21 @@ connected after disconnect. The diagnostics summary contained neither ticket nor
 Five boots (two spike, three gate runs) reached the guest markers 4 s after `podman run`;
 the host listener was `gvproxy` on `127.0.0.1` only and the ticket was absent from the
 container's command line. Not covered: audio, H.264, the Ravada portal, the guest agent
-(clipboard, resize), and TLS to the SPICE server. The pass record lives outside git and
-`make package` requires one for the release commit.
+(clipboard, resize). The pass record lives outside git and `make package` requires
+one for the release commit.
+
+Phase 1b, TLS (2026-09-18): the peer also listens on `tls-port` with a per-run CA and
+server certificate generated on the host. `make live-peer` passed on commit `237860c`
+with a clean tree: the `.vv` `ca` path and the `ca` plus `host-subject` path both
+connected over TLS to the real spice-server, a decoy CA and a wrong subject were
+refused during the TLS handshake (the server logged `SSL_accept failed` and stayed up),
+and the plain and TLS connections that followed still succeeded. Across the day the
+five-test suite ran eleven times against a live peer; ten passed. In the one failure the
+peer container had exited by the fourth test and its exit status and log were lost
+because the container was started with `--rm`; the gate now keeps the container until
+`stop.sh` removes it and prints its exit state on failure, so a recurrence will carry
+evidence. Six consecutive suite runs against one kept peer, twelve refused TLS
+handshakes included, did not reproduce it.
 
 ## Reproduce
 

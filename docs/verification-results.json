@@ -85,8 +85,24 @@
       "audio",
       "h264",
       "ravada-portal",
-      "guest-agent",
-      "spice-tls"
-    ]
+      "guest-agent"
+    ],
+    "tls": {
+      "commit": "237860c",
+      "passed": true,
+      "paths": [
+        "ca",
+        "ca+host-subject"
+      ],
+      "refused": [
+        "decoy-ca",
+        "wrong-subject"
+      ]
+    },
+    "suite_runs_against_live_peer": {
+      "total": 11,
+      "passed": 10,
+      "failed_without_evidence": 1
+    }
   }
 }
