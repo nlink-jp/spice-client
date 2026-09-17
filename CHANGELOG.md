@@ -3,14 +3,15 @@
 ## [Unreleased]
 
 ### Added
+- Diagnostics show `audio_packets` and `audio_frames` alongside the existing counters.
 - `make live-peer`: a real spice-server (QEMU 8.2, spice-server 0.15) in a Podman
   container with an Alpine guest running Xorg and spice-vdagent, driven through the
   application's own session path; verifies transport, ticket, display frames, cursor,
   injected input reaching the guest, authentication failure and reconnection, TLS with a
   per-run certificate authority through the `.vv` `ca` and `host-subject` paths and
   refusal of a decoy authority (ADR-0002), and against the real agent the clipboard
-  broker in both directions under sharing and focus changes and repeated viewport
-  resizes (ADR-0003). `make package` requires a clean pass recorded for the release commit.
+  broker in both directions under sharing and focus changes, repeated viewport
+  resizes, and audio playback from the guest (ADR-0003). `make package` requires a clean pass recorded for the release commit.
 
 ### Fixed
 - A viewport resize after the first one on a session no longer goes missing. The

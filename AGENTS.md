@@ -60,9 +60,14 @@ code and binaries traceable through `Vendor/UPSTREAM.json` and the local patch.
 
 Real peer and human GUI checks are separate gates: never substitute mocked
 success or the reference app's test results. Keep their status explicit in docs.
-The live peer verifies transport, ticket, TLS, display, cursor, input, shutdown, and
+The live peer verifies transport, ticket, TLS, display, cursor, input, shutdown,
 through the guest's spice-vdagent the clipboard broker (sharing and focus, both
-directions) and resize; not audio, H.264, file transfer or a Ravada portal.
+directions) and resize, and audio playback; not H.264 or a Ravada portal. File
+transfer is not verified because the application does not implement it.
+The gate runs in two phases: the churn-heavy suites against one peer, then audio
+against its own peer with `SPICE_CLIENT_LIVE_PEER_AUDIO=1` and one connection,
+because the playback device crashes QEMU's spice server under repeated
+connect/disconnect on both 8.2.2 and 10.0.13. The guest plays silence on purpose.
 `spice-vdagentd` exits without `/dev/uinput`, so the guest init loads `uinput`; the
 init is layered so an Xorg failure keeps the transport tests running and the gate
 fails on the missing agent receipts. The SPICE server serves one client, so the two

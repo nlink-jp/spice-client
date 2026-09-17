@@ -82,12 +82,11 @@
       4
     ],
     "not_covered": [
-      "audio",
       "h264",
       "ravada-portal",
-      "file-transfer",
       "desktop-clipboard-managers",
-      "usb"
+      "usb",
+      "file-transfer (not implemented in the application)"
     ],
     "tls": {
       "commit": "237860c",
@@ -145,6 +144,14 @@
         "observed_attempts": 1,
         "lost_openings": 2,
         "of_runs": 20
+      },
+      "audio": {
+        "device": "virtio-sound-pci",
+        "guest_driver": "virtio_snd",
+        "stream": "silent PCM",
+        "own_peer_single_connection": true,
+        "clean_runs": 5,
+        "crash_rate_with_device_in_churn": "3/12 on qemu 8.2.2, 2/5 on 10.0.13; 0/18 without"
       }
     }
   },

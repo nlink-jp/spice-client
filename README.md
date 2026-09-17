@@ -27,9 +27,9 @@ Spice Client targets Apple Silicon and macOS 26 or later. Connection, ticket,
 display frames, cursor, keyboard input, and shutdown are verified against a real
 spice-server (QEMU 8.2, spice-server 0.15) and a Linux guest running Xorg and
 spice-vdagent through `make live-peer`, which also exercises clipboard sharing in
-both directions under sharing and focus changes and the resize path; the portal
-boundary runs against a loopback simulation. A Ravada portal, a desktop
-environment's clipboard managers, audio, and H.264 remain unverified. See the
+both directions under sharing and focus changes, the resize path, and audio
+playback; the portal boundary runs against a loopback simulation. A Ravada portal,
+a desktop environment's clipboard managers, and H.264 remain unverified. See the
 [verification record](docs/en/verification.md) for the tested scope and limits.
 
 ## Use
@@ -101,8 +101,10 @@ connects through the application's own session path over plain TCP and over
 TLS with a per-run certificate authority (the `.vv` `ca` and `host-subject`
 paths, including refusal of a wrong authority), checks that the guest received
 the injected key, exchanges clipboard text with the guest's spice-vdagent under
-sharing and focus changes, resizes the guest display, and stops the container.
-It does not cover audio, H.264, file transfer, or the Ravada portal. `make package`
+sharing and focus changes, resizes the guest display, and receives audio playback
+from a silent guest stream on a second peer, then stops the containers. It does
+not cover H.264 or the Ravada portal, and file transfer is not a feature of this
+application. `make package`
 refuses to release a commit without a clean `make live-peer` pass recorded for it.
 To regenerate the original icon, run `swift scripts/create-icon.swift` followed
 by `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns`.

@@ -156,11 +156,20 @@ does not come back to the client at all under `virtio-gpu-pci`, and
 `qemu-system-aarch64` offers no QXL device, so the resize observation is
 guest-side, as it already is for the injected key.
 
-Two environment defects were found and fixed: `swift test` ran the two suites in
-parallel against a server that serves one client, and two display heads made QEMU
-dump core on both 8.2.2 and 10.0.13. The suites now run sequentially and the peer
-has one head. Not covered: audio, H.264, file transfer, the Ravada portal, a
-desktop environment's own clipboard managers, and USB.
+Audio playback is verified in a second gate phase (2026-09-18): the guest plays a
+silent PCM stream through `virtio_snd`, and the session's `audio_packets` and
+`audio_frames` counters grow while `audioUnavailable` stays false. Silence keeps
+the machine running the gate quiet while exercising the same path.
+
+Three environment defects were found and fixed: `swift test` ran the suites in
+parallel against a server that serves one client; two display heads made QEMU dump
+core on both 8.2.2 and 10.0.13; and the playback device does the same under
+repeated client connect/disconnect (3 crashes in 12 runs with it, 0 in 18 without,
+on 8.2.2, and 2 in 5 on 10.0.13). The suites now run sequentially, the peer has one
+display head, and audio runs on its own peer with a single connection, which was
+clean in 5 of 5 runs. Not covered: H.264, the Ravada portal, a desktop
+environment's own clipboard managers, and USB. File transfer is not covered
+because the application does not implement it.
 
 ## Reproduce
 

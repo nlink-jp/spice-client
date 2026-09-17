@@ -192,6 +192,24 @@ Three things the implementation measured that the design did not anticipate:
    has a deadline, and the gate requires the second mode to be applied in order
    after the first.
 
+4. **Audio is verified, on its own peer.** The guest plays a silent PCM stream
+   through `virtio_snd` (the Alpine virt kernel ships no HDA driver), the peer
+   gets `-audiodev spice` and `virtio-sound-pci` only in that phase, and the
+   session's diagnostics summary gained `audio_packets` and `audio_frames` from
+   the sink's own counters, which are incremented where packets are scheduled
+   rather than in a render callback and therefore move in a headless test.
+   Silence is deliberate: the path carries whatever PCM it is given, so nothing
+   makes the machine running the gate emit sound. The playback device also makes
+   QEMU's spice server crash under repeated client connect/disconnect (3 crashes
+   in 12 runs with it, 0 in 18 without, on 8.2.2; 2 in 5 on 10.0.13, so not a
+   version fix), which is why the churn-heavy suites keep a peer without it and
+   audio gets its own peer and a single connection: 5 of 5 clean that way.
+5. **File transfer is not verified, because the application does not implement
+   it.** The dependency offers it; nothing in `Sources/` wires it up, and the
+   README lists it as out of scope. A gate that drove the dependency directly
+   would prove upstream's code, not this application's, so it is left to
+   upstream's own suite until file transfer becomes a product feature.
+
 Residual: one clipboard wait timed out at its 10 s bound once in eleven runs,
 with the peer alive and no log kept. It has not recurred in ten consecutive
 runs since; `SPICE_CLIENT_LIVE_PEER_KEEP_LOG=<path>` now keeps the whole guest
