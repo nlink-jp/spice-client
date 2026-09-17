@@ -13,5 +13,8 @@
   fallback, aggregate diagnostics, and a new application icon.
 - Add real WebKit/HTTPS/SPICE simulation, regression tests, pinned dependency
   hashes, actual Metal compilation checks, and final-archive release verification.
+- Link the release binary against the installed macOS SDK explicitly and reject
+  any other linked SDK in `make build` and `make verify-release`; require one
+  deployment target across Package.swift and Info.plist.
 - Retire the reference automatic updater and legacy settings migration. This is
   a local development build; a real-guest validation and notarized release are pending.

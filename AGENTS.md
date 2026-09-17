@@ -1,6 +1,7 @@
 # spice-client
 
-Native macOS 26+ arm64 SPICE client, Swift 6.3 / SwiftUI / AppKit / WebKit.
+Native macOS 26+ arm64 SPICE client in Swift 6 language mode (tools version 6.3,
+built with the Xcode 27 / Swift 6.4 toolchain), SwiftUI / AppKit / WebKit.
 Organization rules: https://github.com/nlink-jp/.github/blob/main/CONVENTIONS.md
 
 The user approved ADR-0001 on 2026-09-17. Implement the application while retaining
@@ -27,6 +28,15 @@ scheme/host/effective-port origin. Clipboard defaults off; actual access checks
 the active session and permission generation. Closing transport never depends on
 input draining. No credentials, endpoint details, clipboard or pixel contents in
 diagnostic logs. No old updater feed, keys, or settings migration.
+
+The release link step names the SDK explicitly: `build-app.sh` passes
+`-platform_version macos <minimum from Package.swift> <current SDK>`, and both
+`build-app.sh` and `verify-release.py` fail when `LC_BUILD_VERSION` records any
+other SDK. macOS draws an app linked against an old SDK with the previous window
+chrome, the Xcode 27 toolchain stamps the deployment target unless told
+otherwise, and signing, notarization and every test pass either way. The
+deployment target is stated once: `check-project.py` requires Info.plist's
+minimum system version to equal the Package.swift platform.
 
 Use `make` for builds and `dist/` for deliverables. Keep both language documents
 current; preserve original copyright notices. Tests accompany behavior changes.

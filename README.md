@@ -58,7 +58,7 @@ connections, multiple guest display streams, and Intel builds are not included.
 
 ## Build and test
 
-Prerequisites: Apple Silicon, macOS 26+, Xcode with Swift 6.3, Metal Toolchain,
+Prerequisites: Apple Silicon, macOS 26+, Xcode with Swift 6.3 or later, Metal Toolchain,
 Python 3, and OpenSSL for simulation. `make doctor` compiles a real Metal shader;
 the presence of an executable shim alone is insufficient.
 
@@ -82,7 +82,10 @@ by `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns`.
 and successful notarization using the organization's signing scripts; it cannot
 produce a trusted release by silently falling back to the local ad-hoc build.
 `make verify-release` unpacks and verifies the final ZIP itself, including its
-identity, version, signature, stapled ticket, and bundled Metal resources.
+identity, version, signature, stapled ticket, bundled Metal resources, and the
+macOS SDK the binary was linked against. `make build` links against the installed
+SDK explicitly and rejects any other result, because macOS draws an app linked
+against an older SDK with the previous generation of window chrome.
 Do not distribute a local build as a notarized release.
 
 ## Structure and review

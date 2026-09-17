@@ -65,6 +65,18 @@ differ from their remotes. Those projects were left unchanged. Go checks do not
 apply to this Swift project. The reusable WebKit testing lesson was fed back to the
 organization knowledge repository in both languages.
 
+## 2026-09-18 update
+
+The local development build was linked against SDK 26.0 (the deployment target)
+although the installed SDK is 27.0, the Xcode 27 toolchain behaviour already
+corrected across the organization's other Swift applications. `make build` now
+names the SDK at link time and, together with `make verify-release`, rejects any
+other linked SDK. Rerun on the same host: `make test`, `make simulate` (same six
+connections, six input packets, zero scoped-cookie leaks), `make build` (linked
+SDK 27.0, no warnings), `--resource-check` and `--smoke-test` on the new bundle.
+`make test-vendor` and the human GUI inspection were not repeated; the real-peer,
+notarization and organization gates remain open.
+
 ## Reproduce
 
 Run `make test`, `make test-vendor`, `make simulate`, then `make build`.

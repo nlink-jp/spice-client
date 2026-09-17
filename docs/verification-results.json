@@ -2,7 +2,7 @@
   "date": "2026-09-17",
   "application": "Spice Client 0.1.0",
   "real_peer": false,
-  "app_binary_sha256": "f889eacf2b8a7561395eee8092cfbcebec043ad25c6540fc5e48c76761dcffaf",
+  "app_binary_sha256": "1cbdfe23c5f5f0429e8e562aebf1618304c84adf3a35468696aba491e5fcdf36",
   "commands": {
     "make test": {
       "registered_swift_tests": 38,
@@ -52,6 +52,9 @@
     "isolated_app_resources_and_startup": true,
     "native_picker_and_confirmation_visual_check": true,
     "release_notarization": false,
-    "organization_check_passed": false
-  }
+    "organization_check_passed": false,
+    "linked_sdk_matches_installed": true
+  },
+  "updated": "2026-09-18",
+  "linked_macos_sdk": "27.0"
 }

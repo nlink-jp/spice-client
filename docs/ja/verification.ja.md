@@ -55,6 +55,15 @@ Developer ID署名・公証・一般公開は実施していないため、リ�
 `active-lens-gui` のsubmodule参照の差異、計3件が報告されました。それらのプロジェクトは変更していません。SwiftプロジェクトのためGoの検査は対象外です。
 再利用可能なWebKit検証の知見は、組織のknowledgeに日英で還元しました。
 
+## 2026-09-18 追記
+
+ローカル開発ビルドは、インストール済み SDK が 27.0 であるにもかかわらず、デプロイメントターゲットの
+SDK 26.0 にリンクされていた。組織の他の Swift アプリで既に対策済みの Xcode 27 ツールチェインの挙動である。
+`make build` はリンク時に SDK を明示し、`make verify-release` と共にそれ以外のリンク先 SDK を拒否する。
+同一ホストで再実行: `make test`、`make simulate`（接続 6、入力パケット 6、範囲外 Cookie 漏えい 0 で同一）、
+`make build`（リンク SDK 27.0、警告なし）、新バンドルでの `--resource-check` と `--smoke-test`。
+`make test-vendor` と人手の GUI 確認は再実施していない。実ピア、公証、組織統合の各ゲートは未完のまま。
+
 ## 再実行
 
 `make test`、`make test-vendor`、`make simulate`、`make build` の順に実行します。

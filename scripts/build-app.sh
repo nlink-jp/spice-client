@@ -2,8 +2,18 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-swift build --disable-sandbox -c release -Xswiftc -warnings-as-errors
+# macOS picks the window chrome generation from the SDK recorded in the binary's
+# LC_BUILD_VERSION. The Xcode 27 toolchain stamps the deployment target there
+# unless -platform_version names the SDK explicitly. The minimum is read from
+# Package.swift so the deployment target is stated once.
+MACOS_MIN="$(sed -n -e 's/.*\.macOS(\.v\([0-9][0-9]*\)).*/\1.0/p' -e 's/.*\.macOS("\([0-9][0-9.]*\)").*/\1/p' Package.swift | head -1)"
+MACOS_SDK="$(xcrun --sdk macosx --show-sdk-version)"
+test -n "$MACOS_MIN" || { echo "build-app: no macOS deployment target in Package.swift" >&2; exit 1; }
+test -n "$MACOS_SDK" || { echo "build-app: xcrun could not report the macOS SDK version" >&2; exit 1; }
+LINK_FLAGS=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MACOS_MIN" -Xlinker "$MACOS_SDK")
+swift build --disable-sandbox -c release -Xswiftc -warnings-as-errors "${LINK_FLAGS[@]}"
 BIN="$(swift build --disable-sandbox -c release --show-bin-path)"
+python3 scripts/verify-release.py --linked-sdk "$BIN/SpiceClient" --sdk "$MACOS_SDK"
 APP="$ROOT/dist/Spice Client.app"
 rm -rf "$APP"
 rm -f "$APP.notarized"
@@ -27,4 +37,4 @@ if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns "$APP/Contents/
 bash scripts/audit-dylib-links.sh "$APP"
 codesign --force --deep --sign - --options runtime --timestamp=none "$APP"
 codesign --verify --deep --strict "$APP"
-echo "Built local verification application: $APP"
+echo "Built local verification application: $APP (linked against macOS SDK $MACOS_SDK)"

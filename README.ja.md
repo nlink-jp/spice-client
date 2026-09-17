@@ -51,7 +51,7 @@ MJPEG で一度だけ再接続します。診断情報は任意に有効化す�
 
 ## ビルドとテスト
 
-Apple Silicon、macOS 26 以降、Swift 6.3 対応 Xcode、Metal Toolchain、Python 3 が必要です。
+Apple Silicon、macOS 26 以降、Swift 6.3 以降の Xcode、Metal Toolchain、Python 3 が必要です。
 シミュレーションには OpenSSL も使用します。`make doctor` は実際に Metal シェーダーをコンパイルします。
 実行ファイルの代理コマンドが存在するだけでは成功扱いにしません。
 
@@ -72,7 +72,9 @@ VM は不要で、システムの信頼設定を書き換えず、利用者の�
 
 `make package` は別途実施するリリース操作です。組織の署名スクリプトによる Developer ID 署名と
 公証成功が必要で、アドホック署名へ切り替えて成功扱いにはしません。
-`make verify-release` は最終 ZIP 自体を展開し、アプリ ID、版数、署名、公証チケット、Metal リソースを確認します。
+`make verify-release` は最終 ZIP 自体を展開し、アプリ ID、版数、署名、公証チケット、Metal リソース、
+バイナリがリンクされた macOS SDK を確認します。`make build` はインストール済み SDK を明示してリンクし、
+それ以外の結果を拒否します。古い SDK にリンクされたアプリは、macOS が旧世代のウィンドウ外観で描画するためです。
 ローカルビルドを公証済みリリースとして配布しないでください。
 
 ## 構成とレビュー
