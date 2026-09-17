@@ -69,9 +69,11 @@ fails on the missing agent receipts. The SPICE server serves one client, so the 
 suites run as separate sequential `swift test` invocations. The peer has one display
 head: two made QEMU dump core on 8.2.2 and 10.0.13 alike.
 `SPICE_CLIENT_LIVE_PEER_KEEP_LOG=<path>` keeps the whole guest log for diagnosis.
-A resize after the first on one agent connection never reaches the guest (ADR-0003
-implementation note 3); the gate pins that as `unapplied` and fails if it is applied,
-so fixing the backend means updating the test and the records in the same change.
+The vendored dependency carries two local patches, applied in the order
+`Vendor/UPSTREAM.json` lists them, both touching `SpiceClipboardManager.swift`:
+clipboard authorization (ADR-0001) and the monitors-configuration send window's
+deadline (ADR-0004, without which only the first resize of an agent connection
+reached the guest). The gate requires both resize modes in order.
 Image references under `Integration/` are digest-pinned and checked; never write
 under `Vendor/` (its file set is hash-checked). Inside the Podman machine QEMU binds
 `0.0.0.0`; the host publishes on `127.0.0.1` only. A stale container of the gate's
@@ -85,8 +87,9 @@ Do not publish, install, or change system preferences while testing fixtures.
 
 Read `docs/en/verification.md` before making claims about hardware or real guests.
 `docs/{en,ja}/source-map*` covers all 76 reference application files. Vendor changes
-must update `Vendor/clipboard-boundary.patch` and `Vendor/UPSTREAM.json`; 418 file
-hashes plus native entries and links are checked. Do not edit vendored binaries.
+must update the matching patch in `Vendor/` and `Vendor/UPSTREAM.json`, whose
+`patches` list is ordered; file hashes plus native entries and links are checked.
+Do not edit vendored binaries.
 
 The WebKit async trust delegate is `webView(_:respondTo:)`, not an overload named
 `didReceive`. Test through WebKit; optional Objective-C protocol methods may compile

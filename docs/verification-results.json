@@ -135,7 +135,21 @@
         "suites ran in parallel against a single-client server",
         "two display heads crashed QEMU 8.2.2 and 10.0.13 (exit 139)"
       ],
-      "product_defect_pinned": "second resize on one agent connection never reaches the guest (reply-gated sender, ADR-0003)"
+      "product_defect_pinned": "fixed by ADR-0004: the monitors-configuration send window now has a deadline",
+      "resize": {
+        "both_modes_applied_in_order": true,
+        "consecutive_runs": 3
+      },
+      "opening_exchange_retry": {
+        "attempts_bound": 3,
+        "observed_attempts": 1,
+        "lost_openings": 2,
+        "of_runs": 20
+      }
     }
-  }
+  },
+  "vendor_patches": [
+    "clipboard-boundary.patch (ADR-0001)",
+    "display-configuration-liveness.patch (ADR-0004)"
+  ]
 }

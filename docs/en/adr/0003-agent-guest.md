@@ -177,7 +177,8 @@ Three things the implementation measured that the design did not anticipate:
    this application presents anyway (ADR-0001 excludes multiple guest display
    streams), eleven consecutive runs kept the peer alive. This is almost
    certainly the unexplained peer exit recorded once during ADR-0002 phase 1b.
-3. **The second resize is a product defect, now pinned.** `resize` after the
+3. **The second resize was a product defect; fixed by [ADR-0004](0004-display-configuration-liveness.md)
+   on 2026-09-18, and the gate's pin is now a positive assertion.** `resize` after the
    first one on an agent connection never reaches the guest:
    `SpiceDisplayConfigurationState.nextToSend` yields nothing while a
    configuration is in flight, and in flight is cleared only by
@@ -187,9 +188,9 @@ Three things the implementation measured that the design did not anticipate:
    life of the agent connection while `resizingAvailable` stays true, which
    makes it silent for the operator. The fix belongs in the vendored backend,
    whose local patch ADR-0001 scoped to clipboard authorization only, so
-   widening it is a separate decision. Until then the gate records the mode as
-   `unapplied` and fails if it ever *is* applied, so the day it is fixed the
-   records must be updated rather than quietly drifting.
+   widening it was a separate decision, taken in ADR-0004: the send window now
+   has a deadline, and the gate requires the second mode to be applied in order
+   after the first.
 
 Residual: one clipboard wait timed out at its 10 s bound once in eleven runs,
 with the peer alive and no log kept. It has not recurred in ten consecutive

@@ -102,9 +102,8 @@ TLS with a per-run certificate authority (the `.vv` `ca` and `host-subject`
 paths, including refusal of a wrong authority), checks that the guest received
 the injected key, exchanges clipboard text with the guest's spice-vdagent under
 sharing and focus changes, resizes the guest display, and stops the container.
-It does not cover audio, H.264, file transfer, or the Ravada portal. Known issue:
-only the first resize of a session reaches the guest (see the changelog). `make package` refuses to release a
-commit without a clean `make live-peer` pass recorded for it.
+It does not cover audio, H.264, file transfer, or the Ravada portal. `make package`
+refuses to release a commit without a clean `make live-peer` pass recorded for it.
 To regenerate the original icon, run `swift scripts/create-icon.swift` followed
 by `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns`.
 
@@ -124,7 +123,8 @@ Do not distribute a local build as a notarized release.
 - `SessionCore`: one-shot confirmation and session lifecycle.
 - `SwiftSpiceAdapter`: transport ownership, ordered input, and clipboard authority.
 - `SpiceClient`: native windows, portal, file intake, settings, and localization.
-- `Vendor/SwiftSpice`: pinned v0.4.2 with a narrow clipboard access patch.
+- `Vendor/SwiftSpice`: pinned v0.4.2 with two local patches, for clipboard access
+  and for the monitors-configuration send window.
 
 [Accepted design](docs/en/adr/0001-native-client-port.md) ·
 [All 76 reference files](docs/en/source-map.md) ·

@@ -89,8 +89,7 @@ VM は不要で、システムの信頼設定を書き換えず、利用者の�
 `host-subject` 経路。誤った認証局の拒否を含む）の両方で接続し、注入したキーがゲストに届いたことを
 確認し、共有とフォーカスの変化を伴ってゲストの spice-vdagent とクリップボードのテキストを交換し、
 ゲストの表示をリサイズしてからコンテナを停止します。音声、H.264、ファイル転送、Ravada ポータルは
-対象外です。既知の問題として、1 セッション中でゲストに届くリサイズは最初の 1 回だけです
-（CHANGELOG 参照）。
+対象外です。
 `make package` は、そのコミットで `make live-peer` が（クリーンなツリーで）合格した記録が無ければ拒否します。
 独自アイコンの再生成は `swift scripts/create-icon.swift`、続いて
 `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns` を実行します。
@@ -108,7 +107,8 @@ VM は不要で、システムの信頼設定を書き換えず、利用者の�
 - `SessionCore`: 一度限りの接続承認とセッションの状態。
 - `SwiftSpiceAdapter`: 通信の所有・終了、順序付き入力、クリップボード管理。
 - `SpiceClient`: ネイティブウィンドウ、ポータル、ファイル入力、設定、言語切り替え。
-- `Vendor/SwiftSpice`: v0.4.2 固定版と、クリップボード実アクセス境界に限定したパッチ。
+- `Vendor/SwiftSpice`: v0.4.2 固定版と、クリップボード実アクセス境界およびモニタ構成の送信窓に
+  関する 2 本の局所パッチ。
 
 [承認済み設計](docs/ja/adr/0001-native-client-port.ja.md) ·
 [元プロジェクト全76ファイルの対応表](docs/ja/source-map.ja.md) ·

@@ -9,14 +9,15 @@
   injected input reaching the guest, authentication failure and reconnection, TLS with a
   per-run certificate authority through the `.vv` `ca` and `host-subject` paths and
   refusal of a decoy authority (ADR-0002), and against the real agent the clipboard
-  broker in both directions under sharing and focus changes and the first viewport
-  resize (ADR-0003). `make package` requires a clean pass recorded for the release commit.
+  broker in both directions under sharing and focus changes and repeated viewport
+  resizes (ADR-0003). `make package` requires a clean pass recorded for the release commit.
 
-### Known issues
-- A viewport resize after the first one on an agent connection does not reach the
-  guest: the backend only sends a monitors configuration when none is in flight, and
-  clears that on a reply which QEMU does not send under virtio-gpu. The session still
-  reports resizing as available. Reconnecting restores it. See ADR-0003.
+### Fixed
+- A viewport resize after the first one on a session no longer goes missing. The
+  backend sent a monitors configuration only when none was in flight and cleared that
+  on a reply which QEMU does not send under virtio-gpu, so the first resize latched
+  the sender for the life of the agent connection while the session still reported
+  resizing as available. The vendored patch now bounds that wait (ADR-0004).
 
 ## [0.1.0] - 2026-09-18
 

@@ -139,14 +139,19 @@ and the guest's answer came back through the broker's write; with sharing off an
 with focus resigned the withheld text was never announced to the guest, and the
 text current when sharing or focus resumed was. Measured round trips over ten
 runs: 423 to 844 ms for the first exchange, 582 to 644 ms after sharing resumed,
-against a 10 s bound. The gate walks the guest log in order and requires each
+against a 10 s bound. The opening exchange of a session was lost twice in about
+twenty runs, before the guest's agent had finished negotiating for that
+connection; a second copy is delivered, so the test copies again up to three
+times for that first exchange only and records the attempt count, which has been
+1 in every run since. The revocation exchanges have no retry. The gate walks the guest log in order and requires each
 delivered text's SHA-256 after the previous match and each withheld text's
 nowhere.
 
 Resize: the first `resize` reached the guest, which applied the mode and screen
-size. The second one on the same agent connection did not, which is a defect in
-the vendored backend's reply-gated sender, described in ADR-0003; the gate pins
-it as `unapplied` and fails if it is ever applied. The guest's new screen size
+size. The second one on the same agent connection did not, a defect in the
+vendored backend's reply-gated sender; ADR-0004 bounded that wait and the gate
+now requires both modes in order, which three consecutive runs delivered. The
+full vendored suite passed after the change. The guest's new screen size
 does not come back to the client at all under `virtio-gpu-pci`, and
 `qemu-system-aarch64` offers no QXL device, so the resize observation is
 guest-side, as it already is for the injected key.
