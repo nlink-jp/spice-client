@@ -7,7 +7,7 @@ import SwiftSpiceAdapter
 @main
 enum Main {
     @MainActor static func main() {
-        if CommandLine.arguments.contains("--version") { print("Spice Client 0.1.0"); return }
+        if CommandLine.arguments.contains("--version") { print(AppInfo.versionLine); return }
         if CommandLine.arguments.contains("--resource-check") {
             do { try verifyResources(); print("Bundled Metal libraries loaded.") }
             catch { fputs("Bundled Metal library check failed.\n", stderr); exit(1) }

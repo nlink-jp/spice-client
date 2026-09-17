@@ -21,7 +21,7 @@ struct LauncherView: View {
                 Text(message).foregroundStyle(.orange).textSelection(.enabled)
             }
             Spacer(minLength: 0)
-            Text("v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"))
+            Text(AppInfo.version)
                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         }
         .padding(28).frame(minWidth: 440, minHeight: 340)
@@ -123,7 +123,7 @@ struct SessionView: View {
                     ScrollView { Text(controller.summary).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                     Button(L.text("copy")) {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(controller.summary, forType: .string)
+                        NSPasteboard.general.setString(AppInfo.versionLine + "\n" + controller.summary, forType: .string)
                     }.disabled(controller.summary.isEmpty)
                 }.padding().frame(height: 220)
             }

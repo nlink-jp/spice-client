@@ -38,6 +38,12 @@ otherwise, and signing, notarization and every test pass either way. The
 deployment target is stated once: `check-project.py` requires Info.plist's
 minimum system version to equal the Package.swift platform.
 
+The version is stated once: the Makefile derives `VERSION` from `git describe`,
+`build-app.sh` writes it into Info.plist (`${VERSION}` placeholder) and checks the
+bundle's `--version`, `verify-release.py` checks it again in the final archive, and
+`check-project.py` rejects version literals under `Sources/`. `make package` refuses
+a `VERSION` that is not exactly a `vX.Y.Z` tag.
+
 Use `make` for builds and `dist/` for deliverables. Keep both language documents
 current; preserve original copyright notices. Tests accompany behavior changes.
 Read `Vendor/SwiftSpice/AGENTS.md` before dependency changes. Keep its original
@@ -60,7 +66,10 @@ without receiving callbacks. File picking uses an extension delegate because ano
 installed client's UTI may otherwise make valid `.vv` files unselectable. Keep that
 delegate alive across the modal panel, including optimized builds.
 
-The project is staged in `_wip/`, with no published remote or umbrella integration.
-Go checks do not apply to this Swift project. Before publishing, complete Developer
-ID/notarization and real-peer validation, integrate the lab-series submodule, update
-the organization profile, and rerun the organization health check.
+The repository is `github.com/nlink-jp/spice-client`, a `lab-series` submodule
+(ADR-0001 amendment of 2026-09-18). Releases are `make package`: Developer ID signing,
+notarization, stapling, the final-archive check, then `make brew` for the cask; keep
+the vendored `scripts/{gen-brew.sh,cask.rb.tmpl,release-brew.mk}` identical to
+`.github/templates/`. Real-peer QEMU/Ravada validation stays open; releases rest on
+simulation by the user's decision, and `docs/{en,ja}/verification*` says so. Go checks
+do not apply to this Swift project.

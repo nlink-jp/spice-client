@@ -93,8 +93,7 @@ public final class SessionController {
                 let stats = await run.session.diagnosticsSnapshot()
                 let agent = await run.agent?.diagnosticsSnapshot()
                 guard !Task.isCancelled, self.run === run else { return }
-                self.summary = "Spice Client 0.1.0\n" +
-                    "input_submitted=\(run.input?.submitted ?? 0)\ninput_sent=\(run.input?.sent ?? 0)\n" +
+                self.summary = "input_submitted=\(run.input?.submitted ?? 0)\ninput_sent=\(run.input?.sent ?? 0)\n" +
                     "input_coalesced=\(run.input?.coalesced ?? 0)\ninput_pending=\(run.input?.pending ?? 0)\n" +
                     "frames_presented=\(stats.metalPresentedFrames)\ngpu_errors=\(stats.gpuErrors)\n" +
                     "mjpeg_frames=\(stats.mjpegDecodedFrames)\nagent_clipboard_failures=\(agent?.clipboardFailures ?? 0)\n" +

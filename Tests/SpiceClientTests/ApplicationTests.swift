@@ -37,6 +37,13 @@ import ConnectionCore
     #expect(picker.panel(picker, shouldEnable: FileManager.default.temporaryDirectory))
 }
 
+@Test func versionIsShownVerbatimAndFallsBackOnlyWithoutABundleValue() {
+    #expect(AppInfo.version(fromBundleValue: nil) == "dev")
+    #expect(AppInfo.version(fromBundleValue: " ") == "dev")
+    #expect(AppInfo.version(fromBundleValue: "v0.1.0-3-gabc1234-dirty") == "v0.1.0-3-gabc1234-dirty")
+    #expect(AppInfo.versionLine.hasPrefix("Spice Client "))
+}
+
 @Test @MainActor func quitWaitsForAsyncCleanupThenAllowsTermination() async throws {
     let delegate = AppDelegate()
     let app = NSApplication.shared

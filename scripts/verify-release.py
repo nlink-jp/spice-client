@@ -74,6 +74,9 @@ def verify(archive, version, sdk):
         subprocess.run(['xcrun', 'stapler', 'validate', str(app)], check=True)
         subprocess.run(['spctl', '--assess', '--type', 'execute', str(app)], check=True)
         subprocess.run([str(app / 'Contents/MacOS/SpiceClient'), '--resource-check'], check=True)
+        reported = subprocess.run([str(app / 'Contents/MacOS/SpiceClient'), '--version'],
+                                  check=True, capture_output=True, text=True).stdout.strip()
+        require(reported == f'Spice Client {version}', f'--version reported {reported!r}, expected {version!r}')
     print(f'Final archive identity, signature, notarization, Metal resources and linked SDK {sdk} verified.')
 
 
