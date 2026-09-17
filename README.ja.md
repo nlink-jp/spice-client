@@ -72,6 +72,7 @@ make doctor
 make test          # アプリ回帰、依存関係の出所、文書リンク、不正 ZIP の拒否
 make test-vendor   # SwiftSpice の全テスト。共有 fixture の競合を避けて順次実行
 make simulate      # 実 WebKit、ローカル HTTPS、SPICE 通信の疑似サーバー
+make live-peer     # Podman 上の QEMU（TCG）で実物の spice-server + 最小 Linux ゲスト
 make build         # dist/Spice Client.app を作成。ローカル用のアドホック署名
 open "dist/Spice Client.app"
 ```
@@ -80,6 +81,11 @@ open "dist/Spice Client.app"
 VM は不要で、システムの信頼設定を書き換えず、利用者の実クリップボードにもアクセスしません。
 アプリには `.vv` パスを引数でも渡せます。`--version`、`--resource-check`、`--smoke-test`、
 `--portal-smoke=<https url>`（そのバンドルでポータルを開き、WebKit が描画したかを報告）はローカル検証用です。
+`make live-peer` には起動済みの Podman machine が必要です。初回に QEMU イメージと小さな Alpine ゲスト
+（約 18 MB、git 管理外）を作り、SPICE をループバックだけに公開するコンテナを実行ごとのチケット付きで
+1 つ起動し、アプリ自身のセッション経路で接続して、注入したキーがゲストに届いたことを確認してから
+コンテナを停止します。音声、H.264、Ravada ポータル、ゲストエージェントは対象外です。
+`make package` は、そのコミットで `make live-peer` が（クリーンなツリーで）合格した記録が無ければ拒否します。
 独自アイコンの再生成は `swift scripts/create-icon.swift`、続いて
 `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns` を実行します。
 

@@ -31,3 +31,7 @@ SOFTWARE.
 
 SwiftSpice and its native dependency notices are retained under Vendor/SwiftSpice
 and copied into the application. See Vendor/UPSTREAM.json for provenance.
+
+`Integration/LivePeer/guest/init` derives from the SwiftSpice Apple/container guest
+init (`Vendor/SwiftSpice/Integration/AppleContainer/guest/init`, MIT, BeriBeli); the
+live peer harness is a development fixture and is not part of the application.

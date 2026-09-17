@@ -40,6 +40,11 @@ for path in root.glob('Sources/**/*.swift'):
 minimum = re.search(r'\.macOS\(\.v(\d+)\)', (root / 'Package.swift').read_text())
 require(minimum is not None, 'No macOS deployment target in Package.swift')
 require(info['LSMinimumSystemVersion'] == minimum.group(1) + '.0', 'Deployment target differs between Package.swift and Info.plist')
+for path in root.glob('Integration/**/*'):
+    if not path.is_file() or 'Artifacts' in path.parts:
+        continue
+    for reference in re.findall(r'docker\.io/[\w./-]+(?::[\w.-]+)?(?:@sha256:[0-9a-f]{64})?', path.read_text()):
+        require('@sha256:' in reference, f'Unpinned image reference in {path.relative_to(root)}: {reference}')
 for path in [root/'README.md', root/'README.ja.md', *root.glob('docs/**/*.md')]:
     text = path.read_text()
     require('/Users/' not in text, f'Non-portable path in {path.name}')

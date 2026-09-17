@@ -6,3 +6,4 @@ dist/
 Vendor/SwiftSpice/.build/
 Vendor/SwiftSpice/.swiftpm/
 __pycache__/
+Integration/LivePeer/Artifacts/

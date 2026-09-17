@@ -80,6 +80,7 @@ make doctor
 make test          # app regressions, provenance, documentation, archive rejection tests
 make test-vendor   # all SwiftSpice tests, sequential to avoid fixture contention
 make simulate      # real WebKit + local HTTPS + simulated SPICE wire protocol
+make live-peer     # real spice-server in QEMU (TCG) under Podman + minimal Linux guest
 make build         # produces dist/Spice Client.app, local ad-hoc signature
 open "dist/Spice Client.app"
 ```
@@ -90,6 +91,13 @@ access a real user's clipboard. The app also accepts a `.vv` path as an argument
 `--version`, `--resource-check`, `--smoke-test`, and `--portal-smoke=<https url>`
 (opens that portal in this exact bundle and reports whether WebKit rendered it)
 support local verification.
+`make live-peer` needs Podman with a running machine. On first use it builds a
+QEMU image and a small Alpine guest (about 18 MB, kept outside git), then starts
+one container that publishes SPICE on loopback only with a per-run ticket,
+connects through the application's own session path, checks that the guest
+received the injected key, and stops the container. It does not cover audio,
+H.264, the Ravada portal, or the guest agent. `make package` refuses to release a
+commit without a clean `make live-peer` pass recorded for it.
 To regenerate the original icon, run `swift scripts/create-icon.swift` followed
 by `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns`.
 

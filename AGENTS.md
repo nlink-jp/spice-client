@@ -17,8 +17,11 @@ SwiftSpice; a narrowly scoped clipboard API patch is explicitly part of the desi
 - `Tests`: regressions; `docs/{en,ja}`: accepted ADR and source coverage ledger.
 - `make test`, `make lint`, `make doctor`, `make build`: local verification.
 - `make simulate`: temporary HTTPS/WebKit/SPICE loopback fixtures; no real guest required.
+- `Integration/LivePeer`, `make live-peer`: real spice-server in QEMU (TCG) under Podman with a
+  minimal Alpine guest (ADR-0002); needs a running Podman machine; `Artifacts/` is ignored by git.
 - `make test-vendor`: sequential upstream suite; unbounded concurrency stalls filesystem fixtures.
-- `make package`, `make verify-release`: require valid Developer ID signing/notarization.
+- `make package`, `make verify-release`: require valid Developer ID signing/notarization, and a
+  clean `make live-peer` pass recorded for the exact release commit (`Artifacts/last-pass.json`).
 
 ## Invariants
 
@@ -56,6 +59,14 @@ code and binaries traceable through `Vendor/UPSTREAM.json` and the local patch.
 
 Real peer and human GUI checks are separate gates: never substitute mocked
 success or the reference app's test results. Keep their status explicit in docs.
+The live peer is a minimal guest without an agent: it verifies transport, ticket,
+display, cursor, input and shutdown, not clipboard, resize, audio or a Ravada portal.
+Image references under `Integration/` are digest-pinned and checked; never write
+under `Vendor/` (its file set is hash-checked). Inside the Podman machine QEMU binds
+`0.0.0.0`; the host publishes on `127.0.0.1` only. A stale container of the gate's
+name is removed on start, and QEMU runs under a 30-minute `timeout`, so an interrupted
+run cannot leave QEMU forever. The ticket is a per-run file under
+`~/.cache/spice-client/live-peer/` (removed by `stop.sh`), never an argument.
 Do not publish, install, or change system preferences while testing fixtures.
 
 ## Implementation notes

@@ -1,0 +1,54 @@
+#!/bin/sh
+# Live peer guest init (ADR-0002). Derived from the SwiftSpice Apple/container
+# guest init (MIT, see NOTICE.md); this copy loads the virtio/DRM/input modules
+# because the Alpine virt kernel ships them as modules.
+mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /tmp
+for module in virtio_pci virtio_gpu virtio_input evdev drm; do
+    if modprobe "$module" 2>/dev/null; then
+        echo "GUEST loaded module $module"
+    else
+        echo "GUEST module $module built in or absent"
+    fi
+done
+sleep 2
+echo "GUEST dri: $(ls /dev/dri 2>/dev/null | tr '\n' ' ')"
+echo "GUEST input: $(ls /dev/input 2>/dev/null | tr '\n' ' ')"
+echo "GUEST fb: $(ls /dev/fb* 2>/dev/null | tr '\n' ' ')"
+if echo "spice-client live peer guest" > /dev/tty0 2>/dev/null; then
+    echo "GUEST tty0 ok"
+else
+    echo "GUEST tty0 unavailable"
+fi
+# Dump every input event as one hex line; the host requires the injected key here.
+(
+    while true; do
+        for device in /dev/input/event*; do
+            test -e "$device" || continue
+            name="$(basename "$device")"
+            marker="/tmp/monitor-$name"
+            test -e "$marker" && continue
+            touch "$marker"
+            (
+                echo "GUEST monitoring $device"
+                while true; do
+                    if dd if="$device" of="/tmp/$name.event" bs=24 count=1 2>/dev/null; then
+                        echo "INPUT_EVENT $device"
+                        od -An -tx1 "/tmp/$name.event"
+                    fi
+                done
+            ) &
+        done
+        sleep 1
+    done
+) &
+echo "GUEST ready"
+# Keep the framebuffer changing so the display channel carries real frames.
+counter=0
+while true; do
+    echo "spice-client framebuffer tick $counter" > /dev/tty0 2>/dev/null
+    counter=$((counter + 1))
+    sleep 1
+done

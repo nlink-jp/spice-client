@@ -1,0 +1,7 @@
+# Live peer image (ADR-0002): QEMU with the spice-server backend, nothing else.
+# The base is pinned by digest; check-project.py refuses an unpinned reference.
+FROM docker.io/library/ubuntu:24.04@sha256:11dc1ccb427f0464a2369e645454c272bb0baece7357c892ba69d313b3a332cf
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends qemu-system-arm qemu-system-modules-spice \
+    && rm -rf /var/lib/apt/lists/*
