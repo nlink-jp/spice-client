@@ -4,11 +4,19 @@
 
 ### Added
 - `make live-peer`: a real spice-server (QEMU 8.2, spice-server 0.15) in a Podman
-  container with a minimal Alpine guest, driven through the application's own session
-  path; verifies transport, ticket, display frames, cursor, injected input reaching the
-  guest, authentication failure and reconnection, plus TLS with a per-run certificate
-  authority through the `.vv` `ca` and `host-subject` paths and refusal of a decoy
-  authority (ADR-0002). `make package` requires a clean pass recorded for the release commit.
+  container with an Alpine guest running Xorg and spice-vdagent, driven through the
+  application's own session path; verifies transport, ticket, display frames, cursor,
+  injected input reaching the guest, authentication failure and reconnection, TLS with a
+  per-run certificate authority through the `.vv` `ca` and `host-subject` paths and
+  refusal of a decoy authority (ADR-0002), and against the real agent the clipboard
+  broker in both directions under sharing and focus changes and the first viewport
+  resize (ADR-0003). `make package` requires a clean pass recorded for the release commit.
+
+### Known issues
+- A viewport resize after the first one on an agent connection does not reach the
+  guest: the backend only sends a monitors configuration when none is in flight, and
+  clears that on a reply which QEMU does not send under virtio-gpu. The session still
+  reports resizing as available. Reconnecting restores it. See ADR-0003.
 
 ## [0.1.0] - 2026-09-18
 

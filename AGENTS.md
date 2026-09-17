@@ -17,8 +17,9 @@ SwiftSpice; a narrowly scoped clipboard API patch is explicitly part of the desi
 - `Tests`: regressions; `docs/{en,ja}`: accepted ADR and source coverage ledger.
 - `make test`, `make lint`, `make doctor`, `make build`: local verification.
 - `make simulate`: temporary HTTPS/WebKit/SPICE loopback fixtures; no real guest required.
-- `Integration/LivePeer`, `make live-peer`: real spice-server in QEMU (TCG) under Podman with a
-  minimal Alpine guest (ADR-0002); needs a running Podman machine; `Artifacts/` is ignored by git.
+- `Integration/LivePeer`, `make live-peer`: real spice-server in QEMU (TCG) under Podman with an
+  Alpine guest running Xorg and spice-vdagent (ADR-0002, ADR-0003); needs a running Podman
+  machine; `Artifacts/` (about 113 MB) is ignored by git and rebuilt when the guest sources change.
 - `make test-vendor`: sequential upstream suite; unbounded concurrency stalls filesystem fixtures.
 - `make package`, `make verify-release`: require valid Developer ID signing/notarization, and a
   clean `make live-peer` pass recorded for the exact release commit (`Artifacts/last-pass.json`).
@@ -59,8 +60,18 @@ code and binaries traceable through `Vendor/UPSTREAM.json` and the local patch.
 
 Real peer and human GUI checks are separate gates: never substitute mocked
 success or the reference app's test results. Keep their status explicit in docs.
-The live peer is a minimal guest without an agent: it verifies transport, ticket,
-display, cursor, input and shutdown, not clipboard, resize, audio or a Ravada portal.
+The live peer verifies transport, ticket, TLS, display, cursor, input, shutdown, and
+through the guest's spice-vdagent the clipboard broker (sharing and focus, both
+directions) and resize; not audio, H.264, file transfer or a Ravada portal.
+`spice-vdagentd` exits without `/dev/uinput`, so the guest init loads `uinput`; the
+init is layered so an Xorg failure keeps the transport tests running and the gate
+fails on the missing agent receipts. The SPICE server serves one client, so the two
+suites run as separate sequential `swift test` invocations. The peer has one display
+head: two made QEMU dump core on 8.2.2 and 10.0.13 alike.
+`SPICE_CLIENT_LIVE_PEER_KEEP_LOG=<path>` keeps the whole guest log for diagnosis.
+A resize after the first on one agent connection never reaches the guest (ADR-0003
+implementation note 3); the gate pins that as `unapplied` and fails if it is applied,
+so fixing the backend means updating the test and the records in the same change.
 Image references under `Integration/` are digest-pinned and checked; never write
 under `Vendor/` (its file set is hash-checked). Inside the Podman machine QEMU binds
 `0.0.0.0`; the host publishes on `127.0.0.1` only. A stale container of the gate's
@@ -87,6 +98,6 @@ The repository is `github.com/nlink-jp/spice-client`, a `lab-series` submodule
 (ADR-0001 amendment of 2026-09-18). Releases are `make package`: Developer ID signing,
 notarization, stapling, the final-archive check, then `make brew` for the cask; keep
 the vendored `scripts/{gen-brew.sh,cask.rb.tmpl,release-brew.mk}` identical to
-`.github/templates/`. A real spice-server with a minimal guest is covered by `make live-peer` (ADR-0002);
-a Ravada portal, an agent guest, audio and H.264 remain unverified, and
+`.github/templates/`. A real spice-server and a real spice-vdagent are covered by `make live-peer`
+(ADR-0002, ADR-0003); a Ravada portal, audio and H.264 remain unverified, and
 `docs/{en,ja}/verification*` says so. Go checks do not apply to this Swift project.

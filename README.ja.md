@@ -24,9 +24,9 @@ brew install --cask nlink-jp/tap/spice-client
 
 Spice Client は Apple Silicon / macOS 26 以降を対象とします。接続、チケット、表示フレーム、カーソル、
 キーボード入力、停止は、`make live-peer` により実物の spice-server（QEMU 8.2、spice-server 0.15）と
-最小 Linux ゲストに対して検証しています。ポータルとクリップボードの境界はループバックシミュレーションで
-検証しています。Ravada ポータル、SPICE エージェント付きデスクトップゲスト（クリップボード、リサイズ）、
-音声、H.264 は未検証です。実施範囲と限界は[検証記録](docs/ja/verification.ja.md)を参照してください。
+Xorg と spice-vdagent が動く Linux ゲストに対して検証しています。同じゲートで、共有とフォーカスの変化を
+伴う双方向のクリップボード共有とリサイズ経路も検証します。ポータルの境界はループバックシミュレーションで
+検証しています。Ravada ポータル、デスクトップ環境のクリップボードマネージャ、音声、H.264 は未検証です。実施範囲と限界は[検証記録](docs/ja/verification.ja.md)を参照してください。
 
 ## 使い方
 
@@ -74,7 +74,7 @@ make doctor
 make test          # アプリ回帰、依存関係の出所、文書リンク、不正 ZIP の拒否
 make test-vendor   # SwiftSpice の全テスト。共有 fixture の競合を避けて順次実行
 make simulate      # 実 WebKit、ローカル HTTPS、SPICE 通信の疑似サーバー
-make live-peer     # Podman 上の QEMU（TCG）で実物の spice-server + 最小 Linux ゲスト
+make live-peer     # Podman 上の QEMU（TCG）で実物の spice-server + spice-vdagent 付きゲスト
 make build         # dist/Spice Client.app を作成。ローカル用のアドホック署名
 open "dist/Spice Client.app"
 ```
@@ -87,7 +87,10 @@ VM は不要で、システムの信頼設定を書き換えず、利用者の�
 （約 18 MB、git 管理外）を作り、SPICE をループバックだけに公開するコンテナを実行ごとのチケット付きで
 1 つ起動し、アプリ自身のセッション経路で平文 TCP と TLS（実行ごとの認証局による `.vv` の `ca` と
 `host-subject` 経路。誤った認証局の拒否を含む）の両方で接続し、注入したキーがゲストに届いたことを
-確認してからコンテナを停止します。音声、H.264、Ravada ポータル、ゲストエージェントは対象外です。
+確認し、共有とフォーカスの変化を伴ってゲストの spice-vdagent とクリップボードのテキストを交換し、
+ゲストの表示をリサイズしてからコンテナを停止します。音声、H.264、ファイル転送、Ravada ポータルは
+対象外です。既知の問題として、1 セッション中でゲストに届くリサイズは最初の 1 回だけです
+（CHANGELOG 参照）。
 `make package` は、そのコミットで `make live-peer` が（クリーンなツリーで）合格した記録が無ければ拒否します。
 独自アイコンの再生成は `swift scripts/create-icon.swift`、続いて
 `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns` を実行します。

@@ -85,7 +85,9 @@
       "audio",
       "h264",
       "ravada-portal",
-      "guest-agent"
+      "file-transfer",
+      "desktop-clipboard-managers",
+      "usb"
     ],
     "tls": {
       "commit": "237860c",
@@ -103,6 +105,37 @@
       "total": 11,
       "passed": 10,
       "failed_without_evidence": 1
+    },
+    "agent_guest": {
+      "adr": "0003",
+      "date": "2026-09-18",
+      "guest_packages": [
+        "spice-vdagent-0.22.1-r2",
+        "xorg-server-21.1.19-r0",
+        "xclip-0.13-r3",
+        "dbus-1.16.2-r1"
+      ],
+      "gate_runs": {
+        "total": 12,
+        "passed": 11,
+        "unexplained_clipboard_timeout": 1
+      },
+      "clipboard_round_trip_ms": {
+        "first_exchange": [
+          423,
+          844
+        ],
+        "after_sharing_resumed": [
+          582,
+          644
+        ],
+        "bound": 10000
+      },
+      "environment_defects_fixed": [
+        "suites ran in parallel against a single-client server",
+        "two display heads crashed QEMU 8.2.2 and 10.0.13 (exit 139)"
+      ],
+      "product_defect_pinned": "second resize on one agent connection never reaches the guest (reply-gated sender, ADR-0003)"
     }
   }
 }

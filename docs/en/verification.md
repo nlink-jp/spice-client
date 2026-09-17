@@ -126,6 +126,37 @@ because the container was started with `--rm`; the gate now keeps the container 
 evidence. Six consecutive suite runs against one kept peer, twelve refused TLS
 handshakes included, did not reproduce it.
 
+## Agent guest (2026-09-18, ADR-0003)
+
+The live peer guest now runs Xorg and `spice-vdagent 0.22.1` on the same Alpine
+`linux-virt` kernel, and the gate drives this application's clipboard broker and
+resize path against them. `make live-peer` passed on the agent guest in eleven of
+twelve runs; the suite covers transport, TLS, clipboard and resize.
+
+Clipboard, through an injected in-memory pasteboard so the operator's own
+pasteboard is never read or written: a host copy reached the guest's X clipboard
+and the guest's answer came back through the broker's write; with sharing off and
+with focus resigned the withheld text was never announced to the guest, and the
+text current when sharing or focus resumed was. Measured round trips over ten
+runs: 423 to 844 ms for the first exchange, 582 to 644 ms after sharing resumed,
+against a 10 s bound. The gate walks the guest log in order and requires each
+delivered text's SHA-256 after the previous match and each withheld text's
+nowhere.
+
+Resize: the first `resize` reached the guest, which applied the mode and screen
+size. The second one on the same agent connection did not, which is a defect in
+the vendored backend's reply-gated sender, described in ADR-0003; the gate pins
+it as `unapplied` and fails if it is ever applied. The guest's new screen size
+does not come back to the client at all under `virtio-gpu-pci`, and
+`qemu-system-aarch64` offers no QXL device, so the resize observation is
+guest-side, as it already is for the injected key.
+
+Two environment defects were found and fixed: `swift test` ran the two suites in
+parallel against a server that serves one client, and two display heads made QEMU
+dump core on both 8.2.2 and 10.0.13. The suites now run sequentially and the peer
+has one head. Not covered: audio, H.264, file transfer, the Ravada portal, a
+desktop environment's own clipboard managers, and USB.
+
 ## Reproduce
 
 Run `make test`, `make test-vendor`, `make simulate`, then `make build`.

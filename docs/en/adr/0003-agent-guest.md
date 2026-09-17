@@ -2,11 +2,19 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Proposed |
+| Status | **Accepted** — user approved on 2026-09-18; revised the same day after the independent design verification pass (see the revision note) |
 | Date | 2026-09-18 |
 | Binds | spice-client |
 | Decision makers | nlink-jp maintainers |
 | Triggered by | ADR-0002 left the clipboard broker and the resize path, the parts of this application that differ most from the reference, verified only against simulation |
+
+Revision note (2026-09-18): the design verification pass found that a withheld host
+text would be offered as soon as sharing resumed, that timing windows made the
+negative assertions racy, that the second resize on one agent connection is
+reply-gated in the backend while virtio-gpu never replies, that the layered init and
+a run that fails on `AGENT_ERROR` contradicted each other, and that the gate's new
+logic had no self-test. §1–§2 are the revised text. ADR-0002 said phase 2 would wait
+for a release of phase 1; the user chose to proceed the same day, before that release.
 
 ## Context
 
@@ -40,7 +48,15 @@ and Podman machine, with the same `linux-virt` kernel:
   which the probe verified as a round trip, and applied the requested
   two-monitor layout (800x600 + 640x480, `XRANDR_DUAL_MONITOR_COMPLETE`).
   With Xorg owning the display the frame stream is a static desktop
-  (9 frames in 10 s) instead of the console tick's tens per second.
+  (9 frames in 10 s, one run) instead of the console tick's tens per second.
+- The guest's screen size does not come back to the client. With the guest
+  applying `xrandr --fb 800x600 --output Virtual-1 --mode 800x600` and its own
+  `xrandr --query` reporting an 800x600 screen, every frame the client received
+  stayed 1280x800: under `virtio-gpu-pci`, QEMU 8.2's SPICE backend does not
+  republish the primary surface at the guest's new screen size. QXL, where this
+  works, is not a device `qemu-system-aarch64` offers (only `virtio-gpu-pci`
+  and `bochs-display`). The upstream harness asserts the same thing guest-side,
+  through `xrandr --query`, and never on the client's surface.
 
 ## Decision
 
@@ -48,12 +64,18 @@ and Podman machine, with the same `linux-virt` kernel:
 
 The agent guest replaces the minimal guest of ADR-0002 rather than being added
 beside it. `Integration/LivePeer/guest/build-in-container.sh` builds it with
-`apk --root --initdb` from `https://dl-cdn.alpinelinux.org/alpine` (never the
-third-party mirror the upstream script defaults to), takes the kernel from the
-same `linux-virt` package, prunes the module tree as before plus keeps `uinput`,
-and records every installed package in `guest.json`.
+`apk --root --initdb` from the `main` and `community` repositories of
+`https://dl-cdn.alpinelinux.org/alpine` (never the third-party mirror the
+upstream script defaults to; `spice-vdagent`, `xorg-server` and `xclip` live in
+`community`), with package signatures checked against the pinned image's
+`/etc/apk/keys`. It takes the kernel from the same `linux-virt` package, prunes
+the module tree as before plus keeps `uinput`, and records every installed
+package and the SHA-256 of the init and of itself in `guest.json`, so the gate
+rebuilds the guest whenever either source changes.
 
-`guest/init` is layered so that a broken Xorg fails only the agent tests:
+`guest/init` is layered so that a broken Xorg leaves the transport tests running
+and the failure attributable to the agent layer; the gate still fails closed,
+on the missing agent receipts:
 
 1. Base: mounts, `modprobe` (`virtio_gpu`, `virtio_input`, `evdev`, `uinput`,
    `drm`), `mdev -s`, the input-event dump, then `GUEST ready` and
@@ -65,15 +87,21 @@ and records every installed package in `guest.json`.
 3. Observers: a clipboard loop reads the X clipboard twice a second and logs
    `CLIPBOARD_OBSERVED bytes=N sha256=…` on every change; when the text has
    the form `spice-client host clipboard <token>` it answers by offering
-   `spice-client guest clipboard <token>` and logs `CLIPBOARD_OFFERED <token>`.
+   `spice-client guest clipboard <token>` through an `xclip` that keeps the
+   selection until another owner takes it (no `-loops`, so the observer's own
+   reads cannot consume the offer before the client's request) and logs
+   `CLIPBOARD_OFFERED <token>`; a read that finds no owner after text logs
+   `CLIPBOARD_CLEARED`.
    An xrandr loop applies the preferred mode of `Virtual-1` whenever it
    changes and logs `XRANDR_MODE WxH`.
 
-`run.sh` waits for `GUEST monitoring` lines as before and then for
-`AGENT_STACK_STARTED` (bounded; `AGENT_ERROR` fails the run), settles 5 s, and
-adds `SPICE_CLIENT_LIVE_PEER_AGENT=1` to the environment file. The QEMU
-command gains `-m 2048` and the container `--memory 3g` for the larger
-initramfs.
+`run.sh` waits for `GUEST monitoring` lines as before and then, bounded, for
+`AGENT_STACK_STARTED`; on `AGENT_ERROR` or the bound it reports and continues
+with `SPICE_CLIENT_LIVE_PEER_AGENT=0`, otherwise it settles 5 s and writes
+`SPICE_CLIENT_LIVE_PEER_AGENT=1`. `gate.sh` runs both suites, requires all
+eight receipts, and checks the agent receipt against the guest log in order.
+The QEMU command gains `-m 2048` and the container `--memory 3g` for the
+larger initramfs.
 
 ### 2. What the agent tests assert
 
@@ -83,24 +111,49 @@ initramfs.
 `NSPasteboard` is never read or written (with an injected access the vendored
 patch never falls back to `SpicePasteboardBridge`).
 
-- **Host to guest follows sharing and focus.** With sharing on and the session
-  focused, a new host text `spice-client host clipboard <token>` is logged by
-  the guest with its SHA-256 within 10 s. With sharing off, a second token is
-  not logged within 5 s. With sharing on again, a third is. With focus
-  resigned, a fourth is not; with focus regained, a fifth is.
-- **Guest to host follows sharing.** The guest's answer to a delivered token
-  arrives in the in-memory pasteboard as `spice-client guest clipboard <token>`
-  within 10 s; no answer arrives for a token that sharing off withheld.
-- **Resize reaches Xorg.** Once `resizingAvailable` is true, `resize(width:
-  1024, height: 768)` produces `XRANDR_MODE 1024x768` in the guest log within
-  15 s, and `resize(width: 1280, height: 800)` produces `XRANDR_MODE 1280x800`.
-- The diagnostics summary contains neither the tokens nor the host.
+- **Host to guest and back, ordered, not timed.** With sharing on and the
+  session focused, a host text `spice-client host clipboard <a>` is answered
+  by the guest, and the answer reaches the in-memory pasteboard through the
+  broker's write. The test then turns sharing off, sets a withheld text `<b>`,
+  sets a newer text `<c>` and turns sharing on again in the same MainActor
+  turn: revocation is synchronous, so no poll can read `<b>`, and resuming
+  offers the current pasteboard, as ADR-0001 intends, which is `<c>`. The
+  same sequence runs for focus resigned and regained with `<d>` and `<e>`. The
+  test records `delivered`/`withheld` tokens and the measured latencies in its
+  receipt; the gate walks the receipt against the guest log in order and
+  requires each delivered token's SHA-256 after the previous match and each
+  withheld token's SHA-256 nowhere. The withheld texts are never announced, so
+  the negatives do not depend on timing. The client's release itself is not
+  observable on the guest side in this sequence, because the guest holds the
+  selection with its own answer by then; the vendored patch's regression test
+  covers the release message.
+- **Resize reaches the guest, twice on one agent connection.** Once
+  `resizingAvailable` is true, `resize(width: 1024, height: 768)` and then,
+  after a spacing wait, `resize(width: 1280, height: 800)` must each be applied
+  by the guest: the gate requires `XRANDR_MODE 1024x768` and then
+  `XRANDR_MODE 1280x800` in that order, so the mode the guest booted with
+  cannot satisfy the second request. The client cannot observe the outcome
+  itself, for the virtio-gpu reason in the Context above; the guest log is the
+  observation, as it already is for the injected key. The second request is the
+  one that matters: nothing acknowledges a monitors configuration under
+  virtio-gpu, so a reply-gated sender would stall there. The spacing wait is
+  fail-closed, since too short a wait fails the ordered check rather than
+  passing it.
+- **R7.** The clipboard test closes its session while the guest holds the X
+  selection with its last answer; `closed` must arrive within the existing bound.
+- The diagnostics summary contains neither the tokens nor the host (a tripwire
+  on a counters-only summary, not evidence).
 
-`LivePeerTests` (transport, TLS) run unchanged against the same guest; the
-frame assertion (at least one revision within 30 s) holds on the static
-desktop. The gate requires the receipts of all eight tests. What one session
-cannot prove, guest-to-guest relay between two sessions, stays with the unit
-tests of the broker.
+`LivePeerTests` (transport, TLS) run unchanged against the same guest with the
+shared broker, which never enables sharing, so the operator's pasteboard is
+not read even now that the guest has an agent; the frame assertion (at least
+one revision within 30 s) holds on the static desktop. The gate requires the
+receipts of all eight tests. What one session cannot prove, guest-to-guest
+relay between two sessions, stays with the unit tests of the broker.
+`Tests/test_live_peer.py` covers the gate's new checks with fixtures: agent
+status from a log, the ordered receipt walk including a withheld token that
+leaked and a startup mode line that must not satisfy a later request, and the
+rebuild trigger on changed guest sources.
 
 ### 3. Provenance and limits
 
@@ -109,14 +162,49 @@ As in ADR-0002: both images digest-pinned, packages recorded not pinned,
 Not covered: audio, H.264, the Ravada portal, file transfer, a desktop
 environment's own clipboard managers, and USB.
 
+## Implementation notes (2026-09-18)
+
+Three things the implementation measured that the design did not anticipate:
+
+1. **One client at a time.** QEMU's SPICE server serves a single client, and
+   `swift test` runs suites in parallel, so the transport suite and the agent
+   suite fought over the one slot: connections failed and the frame observer
+   starved. The gate runs them as two sequential `swift test` invocations.
+2. **Two display heads crash QEMU.** With `max_outputs=2`, QEMU dumped core
+   (exit 139) while the client connected and disconnected repeatedly with the
+   agent present, on both `qemu-system-arm` 8.2.2 (Ubuntu 24.04) and 10.0.13
+   (Debian 13), so it is not a version fix. With `max_outputs=1`, which is what
+   this application presents anyway (ADR-0001 excludes multiple guest display
+   streams), eleven consecutive runs kept the peer alive. This is almost
+   certainly the unexplained peer exit recorded once during ADR-0002 phase 1b.
+3. **The second resize is a product defect, now pinned.** `resize` after the
+   first one on an agent connection never reaches the guest:
+   `SpiceDisplayConfigurationState.nextToSend` yields nothing while a
+   configuration is in flight, and in flight is cleared only by
+   `didReceiveReply`, an agent disconnect or `stop()`. Under virtio-gpu, QEMU
+   consumes `VD_AGENT_MONITORS_CONFIG` in its own `client_monitors_config`
+   handler and never replies, so the first resize latches the sender for the
+   life of the agent connection while `resizingAvailable` stays true, which
+   makes it silent for the operator. The fix belongs in the vendored backend,
+   whose local patch ADR-0001 scoped to clipboard authorization only, so
+   widening it is a separate decision. Until then the gate records the mode as
+   `unapplied` and fails if it ever *is* applied, so the day it is fixed the
+   records must be updated rather than quietly drifting.
+
+Residual: one clipboard wait timed out at its 10 s bound once in eleven runs,
+with the peer alive and no log kept. It has not recurred in ten consecutive
+runs since; `SPICE_CLIENT_LIVE_PEER_KEEP_LOG=<path>` now keeps the whole guest
+log so a recurrence carries evidence.
+
 ## Consequences
 
 - The clipboard broker and the resize path are verified against a real
   `spice-vdagent 0.22`, including the two revocation edges (sharing off, focus
   lost) at the boundary where the reference client leaked.
 - The guest artifact grows from 8 MB to about 113 MB and boots in 7 s instead
-  of 4 s on this host; Xorg joins the moving parts, contained by the layered
-  init. The gate takes roughly the same wall-clock time plus the settle.
+  of 4 s on this host; Xorg joins the moving parts, and the layered init keeps
+  an Xorg failure attributable. The gate takes roughly the same wall-clock
+  time plus the settle.
 - The live frame stream becomes a static desktop; the frame assertion keeps
   its threshold of one revision, and the console-tick measurement from
   ADR-0002 is superseded.
@@ -124,8 +212,9 @@ environment's own clipboard managers, and USB.
 ## Alternatives considered
 
 1. **Two guests, minimal plus agent** — keeps the rich frame stream and a
-   transport-only gate when Xorg breaks, at the price of two artifact sets and
-   two boots per gate. The layered init gives the same isolation with one boot.
+   transport-only pass when Xorg breaks, at the price of two artifact sets and
+   two boots per gate. The layered init keeps the transport results and the
+   attribution with one boot; the gate still fails, which is what a gate is for.
 2. **Reuse the upstream agent init verbatim** — its fixed fixtures answer once
    and cannot express the revocation sequences the broker exists for.
 3. **Exercise the agent through the upstream probe** — proves the server and

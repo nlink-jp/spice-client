@@ -45,6 +45,13 @@ for path in root.glob('Integration/**/*'):
         continue
     for reference in re.findall(r'docker\.io/[\w./-]+(?::[\w.-]+)?(?:@sha256:[0-9a-f]{64})?', path.read_text()):
         require('@sha256:' in reference, f'Unpinned image reference in {path.relative_to(root)}: {reference}')
+# Wording withdrawn by ADR-0003 (the live peer is no longer a minimal, agent-less guest);
+# dated records under docs/ may keep it, the surfaces people read may not.
+for path in [root/'README.md', root/'README.ja.md', root/'AGENTS.md', root/'CHANGELOG.md']:
+    text = path.read_text()
+    for phrase in ('minimal Alpine guest', 'minimal Linux guest', 'minimal guest', 'without an agent',
+                   '最小 Linux ゲスト', '最小ゲスト', 'エージェントの無い', 'エージェント無し'):
+        require(phrase not in text, f'Withdrawn wording {phrase!r} in {path.name}')
 for path in [root/'README.md', root/'README.ja.md', *root.glob('docs/**/*.md')]:
     text = path.read_text()
     require('/Users/' not in text, f'Non-portable path in {path.name}')

@@ -128,10 +128,10 @@ listens on `tls-port` with a per-run CA and server certificate generated on the
 host by `lib.sh` and mounted read-only as QEMU's `x509-dir`; the gate connects
 through the `.vv` `ca` path, through `ca` plus `host-subject`, and proves that a
 decoy CA and a wrong subject are refused while the peer survives. Phase 2, the
-agent guest (Xorg and
-`spice-vdagent` from Alpine packages, as upstream does), is a separate
-decision once phase 1 has run for a release; it must fetch from the official
-Alpine CDN, not the third-party mirror the upstream script defaults to.
+agent guest, is [ADR-0003](0003-agent-guest.md) (2026-09-18): it replaced the
+minimal guest of this record with one that also runs Xorg and `spice-vdagent`,
+fetched from the official Alpine CDN, not the third-party mirror the upstream
+script defaults to.
 
 ### 3. Provenance
 
@@ -181,7 +181,7 @@ result goes into the verification record alongside the simulation results.
 - The guest artifacts are rebuilt on demand (about 18 MB) and are not part of
   the repository or the release.
 - The clipboard broker and resize path, the parts of this application that
-  differ most from the reference, stay simulation-only until phase 2.
+  differ most from the reference, stayed simulation-only until ADR-0003.
 
 ## Alternatives considered
 
