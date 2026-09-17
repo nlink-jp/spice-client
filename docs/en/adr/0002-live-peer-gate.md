@@ -2,11 +2,17 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Proposed |
+| Status | **Accepted** — user approved on 2026-09-18; revised the same day after the independent design verification pass (see the revision note) |
 | Date | 2026-09-18 |
 | Binds | spice-client |
 | Decision makers | nlink-jp maintainers |
 | Triggered by | v0.1.0 shipped on loopback simulation only; no QEMU/Ravada peer exists and the build host cannot run the upstream nested-virtualization harness |
+
+Revision note (2026-09-18): the design verification pass found that `frames_presented`
+counts Metal draws and stays zero in a headless test, that a key injected before the
+guest monitors its input devices is lost, and that the gate had no proof of its own
+execution; §1–§4 below are the revised text. The first gate run reproduced the frame
+finding before the revision.
 
 ## Context
 
@@ -66,14 +72,32 @@ Add `Integration/LivePeer/` to this repository:
   as hex lines.
 - `run.sh` / `stop.sh` — start one detached container per run with `--rm`,
   `--cpus` and `--memory` caps, the guest artifacts mounted read-only, the
-  SPICE port published on `127.0.0.1` only, and a per-run random ticket
-  passed to QEMU as a secret object; wait for the listener and the guest
-  marker; print the port and ticket as environment for the test. `stop.sh`
-  is idempotent and is also the trap handler.
+  SPICE port published on `127.0.0.1` with an ephemeral host port read back
+  from `podman port` (a forward retained by the Podman machine from an
+  earlier run cannot be mistaken for this one), a per-run random ticket
+  written to a `0600` file under `~/.cache/spice-client/live-peer/` and
+  handed to QEMU as `secret,file=` rather than an argument, and QEMU under a
+  30-minute `timeout`. Readiness waits, bounded to 120 s and abandoned if the
+  container dies, for both `GUEST monitoring /dev/input/event*` lines (evdev
+  does not buffer for readers that are not there yet) and for the published
+  port. The port, ticket, ticket file and container name go to a temporary
+  environment file for the test; `stop.sh` removes container and ticket file
+  and is also the trap handler.
 - `make live-peer` — builds the image and guest when missing, starts the
-  peer, runs `swift test --filter LivePeerTests` with the environment,
-  requires the guest log to contain the injected key, and always stops the
-  container. `make live-peer-clean` removes the image and artifacts.
+  peer, runs `swift test --filter LivePeerTests` with the same flags as
+  `make test`, requires the suite's receipt (each test appends its name to a
+  file named by `SPICE_CLIENT_LIVE_PEER_RECEIPT`; a suite disabled by its
+  environment skips silently and `swift test` still exits 0), requires the
+  guest log to contain the injected key, writes `Artifacts/last-pass.json`
+  (commit, whether the tree was dirty, guest and image provenance), and
+  always stops the container. `make package` runs `require-pass.sh` and
+  refuses a release commit without a clean pass recorded for exactly that
+  commit. `make live-peer-clean` removes the image and artifacts.
+- `lib.sh` holds the three checks (guest log, receipt, pass record) as
+  functions, and `Tests/test_live_peer.py` drives them with fixture files,
+  checks that `run.sh` fails before touching Podman when artifacts are
+  missing, parses every script, and checks the digest pin. These run in
+  `make test` without Podman, so the gate's own logic is tested.
 
 ### 2. What the gate asserts
 
@@ -81,11 +105,16 @@ Add `Integration/LivePeer/` to this repository:
 `SPICE_CLIENT_LIVE_PEER_PORT` is set and drives the application's own code
 path, `ConnectionPlan` → `SessionController` → SwiftSpice, not the probe:
 
-- A generated `.vv` (host `127.0.0.1`, the port, the ticket) parses, the
-  session reaches `connected`, `inputAvailable` is true, `desktop` is present,
-  and the diagnostics counter `frames_presented` grows within a bounded wait.
-- The test submits key A down and up; the host side requires
-  `01 00 1e 00 01 00 00 00` in the guest log after the test.
+- A `.vv` text (host `127.0.0.1`, the port, the ticket) parsed in memory,
+  never written to disk, connects: the session reaches `connected` and
+  `inputAvailable` is true. Real display frames are observed the way a window
+  would observe them: a visible subscription on the session's desktop source
+  counts distinct frame revisions and must count at least one within 30 s.
+  `SessionController`'s `frames_presented` counts Metal draws and is not used;
+  it stays zero without a view.
+- The test submits key A down and up after the guest reports monitoring
+  both input devices; the host side requires `01 00 1e 00 01 00 00 00` in the
+  guest log after the test.
 - A wrong ticket ends in `failure == .authentication` and `closed` against
   the real server, and the peer stays up for the next connection.
 - `disconnect()` reaches `closed` within the existing shutdown bound, and a
@@ -97,31 +126,41 @@ not asserted by this gate. Phase 1b adds a TLS listener (`tls-port` with a CA
 generated at container start and exported read-only) so the `.vv` CA path is
 exercised against a real server. Phase 2, the agent guest (Xorg and
 `spice-vdagent` from Alpine packages, as upstream does), is a separate
-decision once phase 1 has run for a release.
+decision once phase 1 has run for a release; it must fetch from the official
+Alpine CDN, not the third-party mirror the upstream script defaults to.
 
 ### 3. Provenance
 
 Both base images are pinned by digest in the files that use them, and
-`check-project.py` requires every `FROM` line under `Integration/` to carry
-`@sha256:`. The kernel version floats with Alpine 3.22's `linux-virt`; the
-build records what it produced in `Artifacts/guest.json` and the gate prints
-it, so any result can be tied to a kernel. No artifact is committed and no
+`check-project.py` requires every `docker.io` reference under `Integration/`
+to carry `@sha256:`. The packages above the base layers are not pinned:
+`apt` and `apk` keep only the current version of a package in a stable
+release, so a hard pin would break within weeks. They are recorded instead:
+`Artifacts/image.json` holds the image id and the `qemu-system-arm`,
+`qemu-system-modules-spice` and `libspice-server1` versions read from the
+built image, `Artifacts/guest.json` the kernel package and the SHA-256 of
+both guest artifacts, and every pass record embeds both, so any result can
+be tied to the software it ran against. No artifact is committed and no
 image is pushed to a registry.
 
 ### 4. Operation and safety
 
-The container mounts only the artifact directory, read-only, publishes only on
-loopback, and dies with the run (`--rm`, trap-based stop, and a QEMU
-`-no-reboot`); a stale container of the same name is removed before start so
-an interrupted run cannot leave an orphaned QEMU burning CPU. The ticket lives
-in the process environment of one run and is never written under the
-repository. Inside the container QEMU binds `0.0.0.0`, which is required by
-the Podman machine's port forwarding and is not reachable from outside the
-host.
+The container mounts only the artifact directory and the ticket file, both
+read-only, publishes only on loopback, and dies with the run (`--rm`,
+trap-based stop, `-no-reboot`). A trap does not run on SIGKILL or host
+sleep, so two further bounds exist: QEMU runs under a 30-minute `timeout`,
+and a stale container of the gate's name is removed at the next start. The
+ticket lives in the ticket file and the environment file of one run, both
+outside the repository and removed at stop; it does not appear in the
+container's command line. Inside the container QEMU binds `0.0.0.0`, which the
+Podman machine's port forwarding requires; the host-side publish is on
+`127.0.0.1`, verified once against `lsof` on this host, and other containers
+inside the machine VM could reach the port, which is out of this gate's threat
+model.
 
 The gate is not part of `make test`: it needs Podman and roughly a minute of
-CPU. It runs before a release and its result goes into the verification record
-alongside the simulation results.
+CPU. `make package` requires its pass record for the release commit, and the
+result goes into the verification record alongside the simulation results.
 
 ## Consequences
 
@@ -130,10 +169,11 @@ alongside the simulation results.
   interoperability claim in the README changes from "unverified" to "verified
   against QEMU 8.2 / spice-server 0.15 with a minimal guest", which is still
   not a Ravada or a desktop guest.
-- Podman becomes an optional development dependency for this gate only.
-  TCG is fast enough for this guest (4 s to markers; frame rate in the tens
-  per second) and needs no hardware support, so the gate runs on any Apple
-  silicon host with Podman.
+- Podman becomes a development dependency for this gate and therefore for
+  `make package`. TCG needs no hardware support; on this host the guest
+  reached its markers in 4 s in two of two boots and delivered frames in the
+  tens per second, and the test waits are ten times those observations. Other
+  hosts are expected to work and have not been measured.
 - The guest artifacts are rebuilt on demand (about 18 MB) and are not part of
   the repository or the release.
 - The clipboard broker and resize path, the parts of this application that
@@ -142,8 +182,9 @@ alongside the simulation results.
 ## Alternatives considered
 
 1. **Upstream Apple/container harness** — needs nested virtualization (M3 or
-   newer) and Apple/container; the build host cannot run it. Its guest images
-   and scripts are reused where they apply.
+   newer) and Apple/container; the build host cannot run it. Only its guest
+   init is reused, as a copy; its scripts are never invoked, because they
+   write under `Vendor/`, whose file set `check-project.py` hash-checks.
 2. **Remote Linux host with KVM** (upstream `RemoteRocky` fixture) — no such
    host exists; adding one is infrastructure, not a test.
 3. **Native QEMU on macOS** — the Homebrew formula has no spice-server
