@@ -1,121 +1,207 @@
-# ADR-0005: Host-to-guest file transfer by dropping files on a session window
+# ADR-0005: Host-to-guest file transfer
 
 | Field | Value |
 |-------|-------|
-| Status | Proposed |
+| Status | **Accepted** — user approved implementation on 2026-09-18; revised the same day after the independent design verification pass (see the revision note) |
 | Date | 2026-09-18 |
 | Binds | spice-client |
 | Decision makers | nlink-jp maintainers |
 | Triggered by | The live peer gate could not verify file transfer because the application never implemented it; the user asked for the feature |
 
+Revision note (2026-09-18). The verification pass rejected four load-bearing
+parts of the first draft and corrected several claims. A `.vv` dropped on a
+session window would have handed a live SPICE ticket to the guest; it is now
+refused. Drag was the only entry path, but the pointer is captured and hidden
+during a session, so there is nothing to drag with; a menu command was added.
+The draft asserted that a transfer can never gate shutdown, which the dependency
+contradicts; the wait is now bounded here and the dependency gap is recorded.
+The draft cited a sentence in ADR-0001 that does not exist ("confirmation is
+reserved for connections"); §1 now argues the question on its own. Also
+corrected: transfers bind to a connection rather than to the session object,
+several bounds are now set explicitly instead of inherited as defaults, and the
+irreversibility of a delivered byte is stated rather than implied.
+
 ## Context
 
 SwiftSpice implements the vdagent file-transfer protocol — `sendFile(at:name:)`,
-`cancelFileTransfer(_:)`, and a `fileTransferEvents` stream with queued,
-awaiting-guest-approval, progress, completed, cancelled and failed cases — and
-the application wires none of it up. `Sources/` contains no reference to it, and
+`cancelFileTransfer(_:)`, and a `fileTransferEvents` stream — and the
+application wires none of it up. `Sources/` contains no reference to it, and
 both READMEs list file transfer as out of scope.
 
-Two properties of the protocol shape this design. It is **push-only**: the client
-sends files to the guest's agent, and there is no guest-to-host direction, so
-nothing the guest does can create a file on this machine. And the guest decides
-where a received file lands; the client names the file and supplies its bytes.
+Two properties of the protocol shape this design. It is **push-only**: the
+client sends files to the guest's agent, there is no guest-to-host direction,
+and guest-originated `start`/`data` messages are rejected outright, so nothing
+the guest sends can create a file on this machine. And the guest decides where a
+received file lands; the client names the file and supplies its bytes.
 
-The backend already enforces the bounds worth having: the source must be a
-regular file (directories and devices are refused, and no directory is ever
-scanned), at most four transfers run at once, a file is at most 8 GiB, and the
-wire chunk is 16 KB.
+The backend refuses anything that is not a regular file and never walks a
+directory. Its other bounds — four concurrent transfers, 8 GiB per file, 16,000
+bytes per chunk — are constructor defaults, not enforcement this application has
+chosen, and the first draft mistook one for the other.
 
 ## Decision
 
-### 1. One entry path: drop onto a connected session window
+### 1. Two entry paths, both explicit, and one refusal
 
-Dropping files on a session window transfers them to that session's guest. The
-drag is the authorization. This is the gesture ADR-0001 R1 asked for in place of
-inferred intent: it happens on this application's own window, it names the exact
-files, and it cannot be produced by guest or portal content.
+**Dropping files on a connected session window** sends them to that session's
+guest. **Session ▸ Send Files…** does the same through a picker, because the
+pointer is captured and hidden while a session has input focus
+(`CGAssociateMouseAndMouseCursorPosition(0)` and `NSCursor.hide()` in the
+desktop view), which leaves nothing to drag with until the operator releases
+capture. A feature reachable only in a state the operator has to know how to
+leave is not reachable.
 
-The launcher keeps its existing `.vv` drop, which starts a connection. A drop on
-a session window is always a transfer, never a connection, including for a `.vv`
-file: the window the operator dropped on says which of the two they meant.
+Either way the operator names the exact files on this application's own window.
+That is the authorization. ADR-0001 requires native confirmation before a
+*connection* starts, because there the intent was inferred from web navigation
+metadata that page content could produce (R1). Nothing here is inferred: a drop
+or a picker selection is an operator action on our window, of the same kind as
+clicking Connect, and neither guest nor portal content can produce one. This
+record decides that question for files; ADR-0001 does not speak to it.
 
-A drop is refused, with a stated reason and without reading anything, when the
-session is not connected, when the guest agent is unavailable, or when the guest
-advertises that it does not accept files. Non-regular files are refused by the
-backend and reported the same way.
+**A `.vv` file is refused on a session window**, with a message saying to use
+the launcher. A connection file carries a SPICE ticket, and ADR-0001 §2 forbids
+displaying or persisting one; sending it to a guest would be worse than either.
+The launcher keeps its `.vv` drop, which starts a connection. For every other
+file the window the operator dropped on says what they meant.
 
-There is no preference gate and no per-file confirmation. Unlike the clipboard,
-which the guest can read passively and which therefore defaults off, nothing here
-moves without a gesture that already names the files.
+A transfer is refused, with a stated reason and without reading anything, when
+the session is not connected, when the guest agent is unavailable, or when the
+guest has said it does not accept files. The decision is a pure function over
+(urls, lifecycle phase, agent availability), so the same rule the drop handler
+applies is the one the tests exercise.
 
-### 2. Lifetime and limits
+**Delivered bytes cannot be recalled.** Cancelling, disconnecting or quitting
+stops sending; it does not retract what the guest already has, and the guest
+keeps whatever partial file it wrote. The transfer list says so.
 
-`SessionController` owns a queue per session. Four transfers run at once, the
-backend's limit; the rest wait and start as slots free, because dropping ten
-files and having six refused is not a useful product. Each transfer is visible
-in the session window with its name, its progress and a cancel control.
+### 2. Ownership, lifetime and bounds
 
-Disconnect cancels every transfer of that session. Cancellation is recorded
-synchronously before transport closes, so a transfer in flight can never gate
-shutdown; this is R7 applied to a second kind of pending work. A transfer is
-bound to the session that started it: a queue entry from a closed session is
-dropped, never sent on a later connection.
+Transfers belong to the **connection**, not to the session object. The MJPEG
+retry path tears down the transport and builds a new `SpiceAgentManager` while
+the `SessionController` survives; a queue owned by the controller would resume
+on the next connection. Every transfer is therefore failed when its connection
+ends, and the event subscription is re-established with the new agent.
 
-### 3. Privacy
+Four transfers run at once and the rest wait, because dropping a folder's worth
+of files and having the surplus refused is not a useful product. That bound, the
+8 GiB per file and the 16,000-byte chunk are passed to `SpiceAgentManager`
+explicitly, so they are this application's numbers.
 
-The transfer list shows file names because the operator chose them. The
-diagnostics summary does not: it gains `files_sent`, `files_failed` and
-`bytes_sent`, counts only. ADR-0001 §6 excludes file paths from diagnostics, and
-names are the same class of information.
+**A transfer that stops making progress fails after 60 seconds.** Three
+dependency behaviours make this necessary rather than decorative: a transfer
+started before the guest's capabilities arrive sits in its initial phase with no
+further event and no timeout; a cancellation waits for a guest reply that may
+never come while still holding one of the four slots; and the event stream
+buffers the newest 64 events, so a terminal event can be evicted when several
+transfers interleave. The deadline is measured from the last observed progress,
+so a slow but live transfer is not killed.
+
+**Shutdown is bounded here.** `SpiceAgentManager.stop()` drains active
+operations without a deadline, and a `sendFile` holds one across blocking reads
+in uncancellable detached tasks, so a source on a stalled mount can block quit
+indefinitely. The session cancels its transfers first, then waits for the agent
+with a deadline and proceeds regardless — R7's rule that pending work never
+gates shutdown, applied where the dependency does not enforce it. The dependency
+gap is recorded here rather than masked, as ADR-0001 §6 requires; bounding the
+drain upstream would be a third local patch and is not part of this decision.
+
+### 3. What is shown, and what is recorded
+
+The window shows one row per drop, not one per file: a count, aggregate
+progress, and a cancel that stops the whole drop. Failures are named
+individually underneath, because "3 of 40 failed" without names is not
+actionable. Forty rows over a video surface is the case the organization's
+own GUI notes warn about.
+
+The transfer list shows file names, which the operator chose. The diagnostics
+summary does not: it gains `files_sent`, `files_failed` and `bytes_sent`,
+counts only, consistent with ADR-0001 §6 excluding paths. Counts are derived
+from the transfer list's own states rather than incremented on events, so an
+evicted event cannot corrupt them. A failure the guest raises for an id we never
+issued is counted separately and never attributed to a transfer.
 
 ### 4. Verification
 
-The live peer gate gains a file-transfer test in the agent phase, driven through
-the application's own path. The guest's `spice-vdagent` is started with
-`--file-xfer-save-dir`, and a guest watcher logs
-`FILE_TRANSFER_RECEIVED name=<name> bytes=<n> sha256=<digest>` for each file that
-appears. The test sends a file of known content from a temporary directory and
-records the name and digest in its receipt; the gate requires a matching guest
-line, so a passing test means the guest holds the same bytes. Refusals — no
-agent, a directory, a session that is not connected — are unit-tested, since they
-need no peer.
+- The refusal rules are a pure function with unit tests: not connected, no
+  agent, guest refuses, a directory, a `.vv`, an empty drop.
+- The live peer gate's agent phase gains a transfer test driven through the
+  application's own path, which calls the same decision function the drop
+  handler calls. It sends a file of known content from a temporary directory and
+  records `file <name> <sha256>` in its receipt.
+- The guest's `spice-vdagent` runs with `--file-xfer-save-dir` pointing at a
+  directory this init owns, and a watcher reports
+  `FILE_TRANSFER_RECEIVED name=<name> bytes=<n> sha256=<digest>` once a file's
+  size has been stable for two seconds, with a hard deadline that always
+  produces a line, because vdagent writes the file as chunks arrive and a poller
+  that hashes on sight hashes a partial file.
+- The gate matches the receipt against that line, so a pass means the guest
+  holds the same bytes. `live_peer_agent_log_matches` gains the three-field
+  form; its existing walk skips any line that is not exactly two fields, which
+  would have made this check silently vacuous.
+
+### 5. Known limits, stated rather than implied
+
+- The backend stats the source by path and then opens it by path, without
+  `O_NOFOLLOW` and without re-checking the descriptor, so a symlink is followed
+  and a path swapped between the two is opened unchecked. The application
+  validates the drop before handing the URL over, but does not hold the
+  descriptor, so this is the dependency's boundary, weaker than the one the
+  `.vv` reader applies to its own input.
+- A file edited while it is being sent delivers a mix of old and new bytes: the
+  size is fixed when the transfer starts and the content is read in chunks as it
+  goes. Truncation surfaces as a read failure; growth is ignored.
+- Cancellation is local. No cancellation status reaches the guest, so the guest
+  decides what to do with the partial file it holds.
 
 ## Consequences
 
-- The application gains its first feature that sends the operator's own data to
-  the guest. The gesture is the authorization, and the boundary is narrow: named
-  regular files, one session, cancelled on disconnect.
+- The application can send the operator's files to a guest. It already sends
+  clipboard text, so this is a second path for the operator's data, not the
+  first; it differs in that a file leaves a name and contents on the guest's
+  disk.
 - The live gate now covers every feature the application has except the Ravada
   portal, which stays on simulation, and H.264, which needs a codec the fixture
   cannot produce.
-- A dropped `.vv` file on a session window now means "send this to the guest",
-  which differs from the launcher. The window is the disambiguator; the READMEs
-  say so.
-- Nothing about the guest's own file-transfer policy is controlled from here. A
-  guest that refuses, or saves somewhere unexpected, is reported, not overridden.
+- A `.vv` now behaves differently on the two windows: connection on the
+  launcher, refusal on a session. Both READMEs say so.
+- The shutdown bound is the application's, not the dependency's. If a future
+  upstream makes its drain cancellable, this deadline should be revisited with
+  the pin upgrade.
 
 ## Alternatives considered
 
-1. **A menu item with a file picker.** A second entry path for the same
-   operation, with a modal in front of it. Drag is the natural gesture for
-   "put this in that window", and the picker can follow later if asked for.
-2. **A confirmation sheet per drop.** The drag already names the files on this
-   application's own window; a sheet would add a click without adding a
-   decision, and ADR-0001 reserves confirmation for starting a connection.
-3. **A preference, off by default, like the clipboard.** The clipboard defaults
+1. **Drag only.** The first draft. Unreachable while the pointer is captured,
+   which is the normal state of a session in use.
+2. **Menu only.** Reachable, but it makes the obvious gesture do nothing, and
+   the launcher already teaches that dropping a file on a window means
+   something.
+3. **A confirmation sheet per drop.** The gesture already names the files on our
+   own window; a sheet would add a click without adding a decision. The one case
+   where the stakes justify refusing outright, a `.vv`, is refused instead.
+4. **A preference, off by default, like the clipboard.** The clipboard defaults
    off because the guest can read it without the operator acting. Here nothing
-   moves without a gesture, so a preference would only add a way for the feature
-   to silently do nothing.
-4. **Refuse files beyond the concurrency limit.** Simpler, and wrong for the
-   common case of dropping a folder's worth of files.
-5. **Guest-to-host transfer.** Not part of the vdagent protocol; it would need
-   WebDAV sharing, which ADR-0001 excludes.
+   moves without a gesture, so a preference would mostly be a way for the
+   feature to silently do nothing.
+5. **Refusing files beyond the concurrency limit.** Simpler, and wrong for the
+   common case of dropping many files at once.
+6. **Guest-to-host transfer.** Not part of the vdagent protocol; it would need
+   WebDAV sharing, which ADR-0001's consequences exclude.
 
 ## References
 
-- [ADR-0001](0001-native-client-port.md) R1 (a gesture on our own window, not
-  inferred intent), R7 (pending work never gates shutdown), §6 (diagnostics
-  exclude paths), §7 (WebDAV out of scope).
+- [ADR-0001](0001-native-client-port.md): R1 (authorization is not inferred from
+  metadata), R7 and §6 (pending work never gates shutdown; record a dependency
+  gap rather than masking it; diagnostics exclude paths), §2 (never display or
+  persist a ticket), §5 (read a selected file once under a size bound).
 - [ADR-0003](0003-agent-guest.md), whose agent guest and gate this extends.
 - `Vendor/SwiftSpice/Sources/SwiftSpice/SpiceFileTransfer.swift` and
-  `sendFile(at:name:)`, which state the push-only contract and the bounds.
+  `sendFile(at:name:)`: the push-only contract, the phases, and the bounds.
+- Knowledge that constrains this design:
+  [security](https://github.com/nlink-jp/knowledge/blob/main/docs/en/security.md)
+  on checking a path and then opening it again;
+  [macOS GUI](https://github.com/nlink-jp/knowledge/blob/main/docs/en/macos-gui.md)
+  on one drop meaning one progress report, and on drags that carry promises
+  rather than file URLs;
+  [testing](https://github.com/nlink-jp/knowledge/blob/main/docs/en/testing.md)
+  on a gate that never drives the surface the rule lives on.
