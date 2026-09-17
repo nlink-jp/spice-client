@@ -11,7 +11,7 @@ apk add --no-cache cpio > /dev/null
 mkdir /rootfs
 apk --root /rootfs --keys-dir /etc/apk/keys --initdb --no-cache \
     --repository "$MIRROR/v3.22/main" --repository "$MIRROR/v3.22/community" \
-    add alpine-base dbus spice-vdagent xclip xorg-server xrandr linux-virt > /tmp/apk.log 2>&1 \
+    add alpine-base alsa-utils dbus spice-vdagent xclip xorg-server xrandr linux-virt > /tmp/apk.log 2>&1 \
     || { cat /tmp/apk.log; exit 1; }
 KVER="$(ls /rootfs/lib/modules)"
 test -n "$KVER"
@@ -20,7 +20,7 @@ PACKAGES="${PACKAGES% }"
 cp /rootfs/boot/vmlinuz-virt /out/vmlinuz-virt
 rm -rf /rootfs/boot
 # Keep virtio, DRM, input (with uinput) and their dependencies; drop the trees this guest never loads.
-for tree in net fs sound crypto arch drivers/net drivers/usb drivers/scsi drivers/md \
+for tree in net fs crypto arch drivers/net drivers/usb drivers/scsi drivers/md \
             drivers/nvme drivers/infiniband drivers/mmc drivers/ata drivers/hid \
             drivers/bluetooth drivers/staging drivers/iio drivers/media; do
     rm -rf "/rootfs/lib/modules/$KVER/kernel/$tree"

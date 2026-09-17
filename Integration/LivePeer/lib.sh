@@ -104,6 +104,12 @@ live_peer_agent_status() {
     return 1
 }
 
+# $1 = guest log. The guest must have actually played, so a passing audio test
+# cannot rest on a silent path that never started.
+live_peer_guest_audio_started() {
+    grep -c '^AUDIO_PLAYING\r*$' "$1" > /dev/null
+}
+
 # $1 = receipt written by LiveAgentTests, $2 = guest log. Walks the receipt in
 # order: a `delivered <token>` line must be followed, later in the log than the
 # previous match, by the guest observing that host text's SHA-256; a `withheld

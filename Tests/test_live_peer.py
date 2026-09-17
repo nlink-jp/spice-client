@@ -85,6 +85,14 @@ class GateChecks(unittest.TestCase):
             log.write_text('GUEST ready\r\nAGENT_STACK_STARTED\r\n')
             self.assertEqual(run(f'. ./lib.sh; live_peer_agent_status "{log}"').returncode, 0)
 
+    def test_audio_check_requires_the_guest_to_have_started_playing(self):
+        with tempfile.TemporaryDirectory() as work:
+            log = Path(work) / 'guest.log'
+            log.write_text('GUEST ready\nAUDIO_ERROR no playback device\n')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_guest_audio_started "{log}"').returncode, 0)
+            log.write_text('GUEST ready\r\nAUDIO_PLAYING\r\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_guest_audio_started "{log}"').returncode, 0)
+
     def test_agent_log_check_is_ordered_and_rejects_withheld_tokens(self):
         import hashlib
         with tempfile.TemporaryDirectory() as work:

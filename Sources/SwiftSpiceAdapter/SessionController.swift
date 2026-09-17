@@ -92,11 +92,13 @@ public final class SessionController {
             while !Task.isCancelled, let self, let run, self.run === run {
                 let stats = await run.session.diagnosticsSnapshot()
                 let agent = await run.agent?.diagnosticsSnapshot()
+                let audio = await run.audio?.statistics()
                 guard !Task.isCancelled, self.run === run else { return }
                 self.summary = "input_submitted=\(run.input?.submitted ?? 0)\ninput_sent=\(run.input?.sent ?? 0)\n" +
                     "input_coalesced=\(run.input?.coalesced ?? 0)\ninput_pending=\(run.input?.pending ?? 0)\n" +
                     "frames_presented=\(stats.metalPresentedFrames)\ngpu_errors=\(stats.gpuErrors)\n" +
                     "mjpeg_frames=\(stats.mjpegDecodedFrames)\nagent_clipboard_failures=\(agent?.clipboardFailures ?? 0)\n" +
+                    "audio_packets=\(audio?.scheduledPackets ?? 0)\naudio_frames=\(audio?.scheduledFrames ?? 0)\n" +
                     "mjpeg_fallback=\(self.usedFallback)\n"
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
             }

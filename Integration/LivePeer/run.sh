@@ -29,6 +29,18 @@ X509_DIR="$(mktemp -d "$TICKET_DIR/x509.XXXXXX")"
 live_peer_make_x509 "$X509_DIR" || { echo "run: could not generate the TLS certificates" >&2; exit 1; }
 # A stale container of the same name is an interrupted earlier run.
 podman rm -f "$NAME" > /dev/null 2>&1 || true
+# Audio is opt-in per run. The playback channel makes QEMU's spice server crash
+# under repeated client connect/disconnect (measured: 3 crashes in 12 runs with it,
+# 0 in 18 without, on 8.2.2 and worse on 10.0.13), so the churn-heavy suites run
+# against a peer without it and the audio test gets its own peer and one connection.
+# Playback only: this client never captures (ADR-0001 excludes microphone capture).
+# macOS ships bash 3.2, where "${arr[@]}" on an empty array trips `set -u`;
+# the expansion below uses the ${arr[@]+...} form for that reason.
+AUDIO_ARGS=()
+if [ -n "${SPICE_CLIENT_LIVE_PEER_AUDIO:-}" ]; then
+    AUDIO_ARGS=(-audiodev spice,id=spice-audio -device virtio-sound-pci,audiodev=spice-audio)
+fi
+
 # One display head: the application presents a single display stream (ADR-0001),
 # and a second head makes QEMU tear down two display channels per client
 # disconnect, which is where it was seen to crash.
@@ -48,6 +60,7 @@ podman run --detach --name "$NAME" \
         -kernel /guest/vmlinuz-virt -initrd /guest/initramfs.cpio.gz \
         -append "console=ttyAMA0 panic=-1" \
         -device virtio-gpu-pci,max_outputs=1 \
+        ${AUDIO_ARGS[@]+"${AUDIO_ARGS[@]}"} \
         -device virtio-keyboard-pci -device virtio-mouse-pci \
         -device virtio-serial-pci -chardev spicevmc,id=vdagent,name=vdagent \
         -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \

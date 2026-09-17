@@ -51,6 +51,31 @@ echo "GUEST fb: $(ls /dev/fb* 2>/dev/null | tr '\n' ' ')"
 ) &
 echo "GUEST ready"
 
+# Audio: play silence, continuously. The SPICE playback path carries the PCM
+# whatever it contains, so a silent stream proves the path end to end without
+# making the developer's machine emit a tone. The mixer is set low as well, in
+# case a future change plays something audible.
+(
+    modprobe virtio_snd 2>/dev/null && echo "GUEST loaded module virtio_snd"
+    attempt=0
+    while ! test -e /dev/snd/pcmC0D0p; do
+        mdev -s
+        attempt=$((attempt + 1))
+        if test "$attempt" -ge 30; then
+            echo "AUDIO_ERROR no playback device"
+            exit 0
+        fi
+        sleep 1
+    done
+    amixer -c 0 sset Master 5% unmute > /dev/null 2>&1
+    amixer -c 0 sset PCM 5% unmute > /dev/null 2>&1
+    echo "AUDIO_PLAYING"
+    while true; do
+        aplay -q -t raw -f S16_LE -r 48000 -c 2 /dev/zero > /dev/null 2>&1
+        sleep 1
+    done
+) &
+
 # --- agent stack: dbus, spice-vdagentd, Xorg (modesetting on virtio-gpu), spice-vdagent ---
 agent_failed() { echo "AGENT_ERROR $1"; }
 dbus-uuidgen --ensure=/etc/machine-id
