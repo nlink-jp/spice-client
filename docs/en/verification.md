@@ -109,8 +109,9 @@ ticket ended in an authentication failure with the peer surviving, and a second 
 connected after disconnect. The diagnostics summary contained neither ticket nor host.
 Five boots (two spike, three gate runs) reached the guest markers 4 s after `podman run`;
 the host listener was `gvproxy` on `127.0.0.1` only and the ticket was absent from the
-container's command line. Not covered: audio, H.264, the Ravada portal, the guest agent
-(clipboard, resize). The pass record lives outside git and `make package` requires
+container's command line. Outside this phase at the time: audio, H.264, the Ravada
+portal, the guest agent (clipboard, resize) and file transfer; the later phases below
+cover all but H.264 and the portal. The pass record lives outside git and `make package` requires
 one for the release commit.
 
 Phase 1b, TLS (2026-09-18): the peer also listens on `tls-port` with a per-run CA and
@@ -161,15 +162,38 @@ silent PCM stream through `virtio_snd`, and the session's `audio_packets` and
 `audio_frames` counters grow while `audioUnavailable` stays false. Silence keeps
 the machine running the gate quiet while exercising the same path.
 
-Three environment defects were found and fixed: `swift test` ran the suites in
+File transfer is verified in the agent phase (2026-09-18): the application sends a
+64,000-byte file of known content through its own drop-decision path, and the
+guest's watcher reports the file's SHA-256 once its modification time settles.
+The gate requires that digest to equal the one the test recorded, so a pass means
+the guest holds the same bytes, not merely that a transfer reported success. Seven
+consecutive gate runs reported the same digest, `c57e96ad…a46212fe`; the one gate
+failure among them came later, in phase 2, from the port race described below. The
+watcher keys on modification time because `spice-vdagent` allocates the whole file
+before the first byte arrives, which makes size stability meaningless.
+
+Three defects sat behind one symptom, every transfer stalling at exactly 32,000 of
+64,000 bytes, and the first two hid the third. This repository's own ADR-0001
+clipboard patch returned early on denied access and skipped the drives at the end
+of the same method; the dependency's transfer drive is not re-entrant, so two
+drives invalidated each other's commit and re-sent one offset for ever; and the
+16,000-byte default chunk does not fit the agent channel's token window, which
+QEMU opens ten tokens wide and replenishes five at a time while a message costs
+one token per 2 KiB fragment. The chunk is now 4,000 bytes and the drive is
+serialised in a third vendored patch. `make verify-vendor` replays all three
+patches against the pinned upstream so the record cannot drift from the change.
+
+Four environment defects were found and fixed: `swift test` ran the suites in
 parallel against a server that serves one client; two display heads made QEMU dump
-core on both 8.2.2 and 10.0.13; and the playback device does the same under
+core on both 8.2.2 and 10.0.13; the playback device does the same under
 repeated client connect/disconnect (3 crashes in 12 runs with it, 0 in 18 without,
-on 8.2.2, and 2 in 5 on 10.0.13). The suites now run sequentially, the peer has one
-display head, and audio runs on its own peer with a single connection, which was
-clean in 5 of 5 runs. Not covered: H.264, the Ravada portal, a desktop
-environment's own clipboard managers, and USB. File transfer is not covered
-because the application does not implement it.
+on 8.2.2, and 2 in 5 on 10.0.13); and podman lost the race for the ephemeral
+loopback port it had just been allocated, once in three consecutive runs, in
+phase 2 immediately after phase 1 released its own. The suites now run
+sequentially, the peer has one display head, audio runs on its own peer with a
+single connection, which was clean in 5 of 5 runs, and a peer start that loses the
+port race is retried with a fresh allocation up to five times. Not covered: H.264,
+the Ravada portal, a desktop environment's own clipboard managers, and USB.
 
 ## Reproduce
 

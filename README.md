@@ -63,6 +63,16 @@ success** (OFF by default); changed/replaced files are preserved. Portal downloa
 stay in memory. The portal login store is separate from Maspice and can be cleared
 in Settings. No migration of old settings or saved SPICE passwords is performed.
 
+Files can be sent to a connected guest, either by dropping them on the session
+window or through Session ▸ Send Files…. The menu command exists because the
+pointer is captured during a session, which leaves nothing to drag with. The
+window lists one row per drop with progress and a cancel, and names any file
+that failed. Cancelling stops sending; it does not take back what the guest
+already received. A `.vv` dropped on a session window is refused, because it
+carries a connection ticket; drop it on the launcher to connect instead.
+Transfers belong to the connection and are failed when it ends. Files move
+host to guest only, which is all the agent protocol offers.
+
 The display follows the viewport size when the guest agent supports it. Audio
 playback uses the advertised playback channel. A codec availability failure before
 any advanced-video frame is presented can retry once with MJPEG. Diagnostics are
@@ -82,6 +92,7 @@ the presence of an executable shim alone is insufficient.
 make doctor
 make test          # app regressions, provenance, documentation, archive rejection tests
 make test-vendor   # all SwiftSpice tests, sequential to avoid fixture contention
+make verify-vendor # replays Vendor/*.patch against the pinned upstream (needs network)
 make simulate      # real WebKit + local HTTPS + simulated SPICE wire protocol
 make live-peer     # real spice-server + spice-vdagent guest in QEMU (TCG) under Podman
 make build         # produces dist/Spice Client.app, local ad-hoc signature
@@ -101,11 +112,14 @@ connects through the application's own session path over plain TCP and over
 TLS with a per-run certificate authority (the `.vv` `ca` and `host-subject`
 paths, including refusal of a wrong authority), checks that the guest received
 the injected key, exchanges clipboard text with the guest's spice-vdagent under
-sharing and focus changes, resizes the guest display, and receives audio playback
-from a silent guest stream on a second peer, then stops the containers. It does
-not cover H.264 or the Ravada portal, and file transfer is not a feature of this
-application. `make package`
+sharing and focus changes, resizes the guest display, sends a file and requires
+the guest to report back the same SHA-256, and receives audio playback from a
+silent guest stream on a second peer, then stops the containers. It does not
+cover H.264 or the Ravada portal. `make package`
 refuses to release a commit without a clean `make live-peer` pass recorded for it.
+`make verify-vendor` fetches the pinned upstream dependency and replays the
+patches in `Vendor/`, failing if they no longer compose the vendored tree; it
+needs the network, which is why `make test` does not run it.
 To regenerate the original icon, run `swift scripts/create-icon.swift` followed
 by `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns`.
 

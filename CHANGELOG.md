@@ -3,7 +3,18 @@
 ## [Unreleased]
 
 ### Added
-- Diagnostics show `audio_packets` and `audio_frames` alongside the existing counters.
+- Send files to a connected guest, by dropping them on the session window or through
+  Session ▸ Send Files…. The window lists one row per drop with aggregate progress and
+  a cancel, names the files that failed, and says that delivered bytes cannot be
+  recalled. A `.vv` dropped on a session window is refused, because it carries a
+  ticket; the launcher still accepts one to start a connection. Transfers belong to the
+  connection and are failed when it ends (ADR-0005).
+- Diagnostics show `audio_packets` and `audio_frames` alongside the existing counters,
+  and `files_sent`, `files_failed` and `bytes_sent` for file transfer. Counts only: no
+  file names or paths.
+- `make verify-vendor` replays `Vendor/*.patch` against the pinned upstream and fails
+  if the recorded patches no longer compose the vendored tree. Needs the network, so it
+  is separate from `make test`.
 - `make live-peer`: a real spice-server (QEMU 8.2, spice-server 0.15) in a Podman
   container with an Alpine guest running Xorg and spice-vdagent, driven through the
   application's own session path; verifies transport, ticket, display frames, cursor,
@@ -11,9 +22,21 @@
   per-run certificate authority through the `.vv` `ca` and `host-subject` paths and
   refusal of a decoy authority (ADR-0002), and against the real agent the clipboard
   broker in both directions under sharing and focus changes, repeated viewport
-  resizes, and audio playback from the guest (ADR-0003). `make package` requires a clean pass recorded for the release commit.
+  resizes, audio playback from the guest (ADR-0003), and a file sent to the guest whose
+  SHA-256 the guest reports back (ADR-0005). `make package` requires a clean pass
+  recorded for the release commit.
 
 ### Fixed
+- File transfer no longer stalls partway through a file. Three causes sat behind one
+  symptom: the clipboard patch returned early when access was denied and skipped the
+  drives at the end of the same method; the backend's transfer drive is not re-entrant,
+  so concurrent drives re-sent one offset for ever; and the 16,000-byte default chunk
+  does not fit the agent channel's token window, which QEMU opens ten tokens wide and
+  replenishes five at a time. The chunk is now 4,000 bytes and the drive is serialised
+  in a vendored patch (ADR-0005 §6).
+- The live peer gate no longer fails when podman loses the race for the loopback port
+  it was just allocated. The start is retried with a fresh allocation, up to five times;
+  any other failure still surfaces immediately.
 - A viewport resize after the first one on a session no longer goes missing. The
   backend sent a monitors configuration only when none was in flight and cleared that
   on a reply which QEMU does not send under virtio-gpu, so the first resize latched

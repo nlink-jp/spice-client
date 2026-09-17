@@ -21,6 +21,14 @@ corrected: transfers bind to a connection rather than to the session object,
 several bounds are now set explicitly instead of inherited as defaults, and the
 irreversibility of a delivered byte is stated rather than implied.
 
+Second revision note (2026-09-18, after implementation). Building this against
+the live peer contradicted two of the numbers above. The chunk is 4,000 bytes,
+not 16,000, because the agent channel's token window is smaller than the
+dependency's default assumes (§2). The guest watcher keys on modification time,
+not size, because vdagent preallocates the file (§4). Three defects behind a
+single symptom are recorded in the new §6, including one in a local patch this
+repository already owned.
+
 ## Context
 
 SwiftSpice implements the vdagent file-transfer protocol — `sendFile(at:name:)`,
@@ -85,8 +93,15 @@ ends, and the event subscription is re-established with the new agent.
 
 Four transfers run at once and the rest wait, because dropping a folder's worth
 of files and having the surplus refused is not a useful product. That bound, the
-8 GiB per file and the 16,000-byte chunk are passed to `SpiceAgentManager`
+8 GiB per file and the 4,000-byte chunk are passed to `SpiceAgentManager`
 explicitly, so they are this application's numbers.
+
+The chunk is small because the agent channel is token-flow-controlled and the
+dependency's 16,000-byte default does not fit the window QEMU grants. Each
+message costs one token per 2 KiB wire fragment; QEMU grants ten tokens and
+returns them five at a time, so a 16,000-byte chunk needs eight and the second
+one blocks at seven, for ever. This was measured, not reasoned about: the first
+implementation stalled every transfer at exactly 32,000 of 64,000 bytes.
 
 **A transfer that stops making progress fails after 60 seconds.** Three
 dependency behaviours make this necessary rather than decorative: a transfer
@@ -132,13 +147,20 @@ issued is counted separately and never attributed to a transfer.
 - The guest's `spice-vdagent` runs with `--file-xfer-save-dir` pointing at a
   directory this init owns, and a watcher reports
   `FILE_TRANSFER_RECEIVED name=<name> bytes=<n> sha256=<digest>` once a file's
-  size has been stable for two seconds, with a hard deadline that always
-  produces a line, because vdagent writes the file as chunks arrive and a poller
-  that hashes on sight hashes a partial file.
+  **modification time** has been stable for two seconds, with a hard deadline
+  that always produces a line, because vdagent writes the file as chunks arrive
+  and a poller that hashes on sight hashes a partial file. Size stability, which
+  the first implementation used, proves nothing: vdagent allocates the full size
+  before the first byte arrives, so every partial file already has its final
+  size. The watcher also emits `FILE_TRANSFER_REMOVED` when the agent deletes
+  the file, so a vanished file is a reported outcome rather than silence.
 - The gate matches the receipt against that line, so a pass means the guest
   holds the same bytes. `live_peer_agent_log_matches` gains the three-field
   form; its existing walk skips any line that is not exactly two fields, which
-  would have made this check silently vacuous.
+  would have made this check silently vacuous. The three-field form searches the
+  whole log and does not advance the cursor the two-field form walks, because
+  the guest reports a file only after its modification time settles, seconds
+  after the markers that follow it.
 
 ### 5. Known limits, stated rather than implied
 
@@ -153,6 +175,37 @@ issued is counted separately and never attributed to a transfer.
   goes. Truncation surfaces as a read failure; growth is ignored.
 - Cancellation is local. No cancellation status reaches the guest, so the guest
   decides what to do with the partial file it holds.
+
+### 6. Three defects found by building it, and where each was fixed
+
+Every transfer stalled at exactly 32,000 of 64,000 bytes. Three independent
+causes sat behind that one symptom, and the first two hid the third.
+
+- **Our own ADR-0001 patch was wrong.** The clipboard boundary returned early
+  when access was denied, skipping the file-transfer and display-configuration
+  drives at the end of the same method. That method is the only periodic path
+  while automatic pasteboard synchronization is on, so a session with the
+  clipboard off never drove a transfer forward on a timer. The patch was
+  widened; a local patch is a change we own, and it was two ADRs old.
+- **The dependency's drive is not re-entrant.** Each pass reads a job, awaits a
+  read and a send, then commits only if the entry is still what it read. Two
+  passes interleaving at those awaits invalidate each other, so neither commits
+  and the same offset is re-sent for ever, which the guest rejects as duplicate
+  data. Concurrent callers are ordinary here: the pasteboard poll drives
+  transfers every 250 ms and so does every inbound agent message. Serialised in
+  a third local patch (`Vendor/file-transfer-drive.patch`) rather than worked
+  around in the application, because no caller can avoid the race from outside.
+- **The chunk size did not fit the token window**, as §2 records. This was the
+  root cause; the two above had to be fixed before it was visible at all.
+
+The lesson that generalises: a stall at a round number is a window, not a bug in
+the byte handling, and a local patch is part of the system under test.
+
+`Vendor/*.patch` is now replayed against the pinned upstream by
+`make verify-vendor`, which fails if the recorded patches no longer compose the
+vendored tree. `check-project.py` pins every vendored file and every patch by
+hash, so it catches an unrecorded edit; it cannot tell whether the patches still
+describe that edit, and after this work there are three of them.
 
 ## Consequences
 

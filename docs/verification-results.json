@@ -1,7 +1,7 @@
 {
   "date": "2026-09-17",
   "application": "Spice Client",
-  "real_peer": "minimal guest via make live-peer; no Ravada, agent, audio or H.264",
+  "real_peer": "make live-peer: real spice-server in QEMU under Podman with an Alpine guest running Xorg and spice-vdagent; covers transport, TLS, clipboard, resize, file transfer and audio; no Ravada portal, no H.264",
   "app_binary_sha256": "fdfac627d3161218c89ae07d032c866c22a06f758a12565deebd42310400093a",
   "commands": {
     "make test": {
@@ -85,8 +85,7 @@
       "h264",
       "ravada-portal",
       "desktop-clipboard-managers",
-      "usb",
-      "file-transfer (not implemented in the application)"
+      "usb"
     ],
     "tls": {
       "commit": "237860c",
@@ -132,7 +131,8 @@
       },
       "environment_defects_fixed": [
         "suites ran in parallel against a single-client server",
-        "two display heads crashed QEMU 8.2.2 and 10.0.13 (exit 139)"
+        "two display heads crashed QEMU 8.2.2 and 10.0.13 (exit 139)",
+        "podman lost the race for the ephemeral loopback port it had just been allocated (1 of 3 consecutive runs, in phase 2 right after phase 1 released its own); the peer start is retried with a fresh allocation, up to 5 times"
       ],
       "product_defect_pinned": "fixed by ADR-0004: the monitors-configuration send window now has a deadline",
       "resize": {
@@ -152,11 +152,29 @@
         "own_peer_single_connection": true,
         "clean_runs": 5,
         "crash_rate_with_device_in_churn": "3/12 on qemu 8.2.2, 2/5 on 10.0.13; 0/18 without"
+      },
+      "file_transfer": {
+        "adr": "0005",
+        "date": "2026-09-18",
+        "bytes": 64000,
+        "chunk_bytes": 4000,
+        "guest_report": "FILE_TRANSFER_RECEIVED with sha256, keyed on modification-time stability",
+        "digest_matched_the_test_receipt": true,
+        "defects_fixed": [
+          "this repository's ADR-0001 clipboard patch returned early on denied access and skipped the file-transfer and display-configuration drives at the end of the same method",
+          "the dependency's transfer drive is not re-entrant: concurrent drives invalidated each other's commit and re-sent one offset for ever",
+          "the 16,000-byte default chunk needs 8 agent tokens; QEMU grants 10 and returns 5 at a time, so the second chunk deadlocked at 7 (stall at 32,000 of 64,000 bytes)"
+        ],
+        "gate_runs_with_a_matching_digest": 7,
+        "gate_runs": 7,
+        "note": "the one gate failure among those 7 was the podman loopback-port race in phase 2, after the file test had already passed and recorded its digest"
       }
     }
   },
   "vendor_patches": [
     "clipboard-boundary.patch (ADR-0001)",
-    "display-configuration-liveness.patch (ADR-0004)"
-  ]
+    "display-configuration-liveness.patch (ADR-0004)",
+    "file-transfer-drive.patch (ADR-0005)"
+  ],
+  "vendor_patches_replayed_against_pinned_upstream": "make verify-vendor"
 }

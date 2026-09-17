@@ -13,7 +13,7 @@ SwiftSpice; a narrowly scoped clipboard API patch is explicitly part of the desi
 - `Sources/SessionCore`: pure lifecycle and permissions; no GUI or backend imports.
 - `Sources/SwiftSpiceAdapter`: backend integration, ordered input, clipboard broker.
 - `Sources/SpiceClient`: native windows, confirmation, portal, file intake, settings.
-- `Vendor/SwiftSpice`: pinned upstream with documented local clipboard patch.
+- `Vendor/SwiftSpice`: pinned upstream with three documented local patches.
 - `Tests`: regressions; `docs/{en,ja}`: accepted ADR and source coverage ledger.
 - `make test`, `make lint`, `make doctor`, `make build`: local verification.
 - `make simulate`: temporary HTTPS/WebKit/SPICE loopback fixtures; no real guest required.
@@ -21,6 +21,7 @@ SwiftSpice; a narrowly scoped clipboard API patch is explicitly part of the desi
   Alpine guest running Xorg and spice-vdagent (ADR-0002, ADR-0003); needs a running Podman
   machine; `Artifacts/` (about 113 MB) is ignored by git and rebuilt when the guest sources change.
 - `make test-vendor`: sequential upstream suite; unbounded concurrency stalls filesystem fixtures.
+- `make verify-vendor`: replays `Vendor/*.patch` against the pinned upstream; needs the network.
 - `make package`, `make verify-release`: require valid Developer ID signing/notarization, and a
   clean `make live-peer` pass recorded for the exact release commit (`Artifacts/last-pass.json`).
 
@@ -56,14 +57,14 @@ cannot stand in for it.
 Use `make` for builds and `dist/` for deliverables. Keep both language documents
 current; preserve original copyright notices. Tests accompany behavior changes.
 Read `Vendor/SwiftSpice/AGENTS.md` before dependency changes. Keep its original
-code and binaries traceable through `Vendor/UPSTREAM.json` and the local patch.
+code and binaries traceable through `Vendor/UPSTREAM.json` and the local patches.
 
 Real peer and human GUI checks are separate gates: never substitute mocked
 success or the reference app's test results. Keep their status explicit in docs.
 The live peer verifies transport, ticket, TLS, display, cursor, input, shutdown,
 through the guest's spice-vdagent the clipboard broker (sharing and focus, both
-directions) and resize, and audio playback; not H.264 or a Ravada portal. File
-transfer is not verified because the application does not implement it.
+directions), resize, a file whose SHA-256 the guest reports back, and audio
+playback; not H.264 or a Ravada portal.
 The gate runs in two phases: the churn-heavy suites against one peer, then audio
 against its own peer with `SPICE_CLIENT_LIVE_PEER_AUDIO=1` and one connection,
 because the playback device crashes QEMU's spice server under repeated
@@ -74,12 +75,26 @@ fails on the missing agent receipts. The SPICE server serves one client, so the 
 suites run as separate sequential `swift test` invocations. The peer has one display
 head: two made QEMU dump core on 8.2.2 and 10.0.13 alike.
 `SPICE_CLIENT_LIVE_PEER_KEEP_LOG=<path>` keeps the whole guest log for diagnosis.
-The vendored dependency carries two local patches, applied in the order
-`Vendor/UPSTREAM.json` lists them, both touching `SpiceClipboardManager.swift`:
-clipboard authorization (ADR-0001) and the monitors-configuration send window's
+podman binds the ephemeral loopback port it was allocated a moment after asking
+for it, and nothing reserves it in between, so a peer start can lose the race to
+whatever released a port just then, including the previous phase's own peer
+(seen once in three runs). `live_peer_start_with_retry` retries up to five
+times; every other failure passes through untouched.
+The agent channel is token-flow-controlled: a message costs one token per 2 KiB
+wire fragment, QEMU grants ten and returns five at a time, so a file-transfer
+chunk above roughly 8 KiB deadlocks after the first message. The application
+sends 4,000 bytes. A transfer that stops at a round number is a window, not a
+bug in the byte handling.
+The vendored dependency carries three local patches, applied in the order
+`Vendor/UPSTREAM.json` lists them, all touching `SpiceClipboardManager.swift`:
+clipboard authorization (ADR-0001), the monitors-configuration send window's
 deadline (ADR-0004, without which only the first resize of an agent connection
-reached the guest). The gate requires both resize modes in order. Neither patch
-has been proposed upstream (ADR-0004 explains why), so when the pin moves, first
+reached the guest), and serialising the file-transfer drive (ADR-0005, without
+which concurrent drives re-send one offset for ever). The gate requires both
+resize modes in order and the file digest. `make verify-vendor` replays all three
+against the pinned upstream, because hashes catch an unrecorded edit but cannot
+tell whether the patches still describe it. None has been proposed upstream
+(ADR-0004 explains why), so when the pin moves, first
 check whether upstream closed either hole itself: a patch that no longer applies
 cleanly may mean the fix landed there, in which case drop ours rather than
 forcing it, and keep the gate, which is what proves the behaviour either way.
@@ -111,5 +126,5 @@ The repository is `github.com/nlink-jp/spice-client`, a `lab-series` submodule
 notarization, stapling, the final-archive check, then `make brew` for the cask; keep
 the vendored `scripts/{gen-brew.sh,cask.rb.tmpl,release-brew.mk}` identical to
 `.github/templates/`. A real spice-server and a real spice-vdagent are covered by `make live-peer`
-(ADR-0002, ADR-0003); a Ravada portal, audio and H.264 remain unverified, and
+(ADR-0002, ADR-0003, ADR-0005); a Ravada portal and H.264 remain unverified, and
 `docs/{en,ja}/verification*` says so. Go checks do not apply to this Swift project.
