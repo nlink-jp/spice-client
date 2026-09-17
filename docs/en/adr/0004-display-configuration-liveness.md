@@ -76,8 +76,17 @@ requires the second mode to be applied, in order, after the first.
   dependency reviewable but raises the cost of moving to a new upstream: both
   must be reapplied in order, and the review before any upgrade now covers a
   second file.
-- An upstream proposal is worth drafting, because the defect is upstream's and
-  not specific to this application. Publishing or submitting it is separate work.
+- An upstream proposal is not being submitted for now (decided 2026-09-18 after
+  looking at how upstream is run). The repository accepts issues and pull
+  requests from anyone in the mechanical sense, and the defect is live at the tip
+  of `main`, which is the very commit this project pins. But there is no
+  `CONTRIBUTING`, no issue or pull-request template, no discussions, zero forks,
+  and every pull request in both of the maintainer's SPICE repositories is their
+  own, from `codex/*` branches, with three of their own still open after three
+  weeks. The project is solo and agent-driven, so it is likely to reach a fix of
+  its own, and there is no sign that outside contributions are expected. The
+  local patch carries the fix meanwhile, and the next look at upstream is the
+  next pin upgrade, not a watch.
 - The gate keeps the regression: a future upstream that closes the window
   differently still has to deliver the second mode.
 

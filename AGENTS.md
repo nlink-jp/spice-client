@@ -73,7 +73,11 @@ The vendored dependency carries two local patches, applied in the order
 `Vendor/UPSTREAM.json` lists them, both touching `SpiceClipboardManager.swift`:
 clipboard authorization (ADR-0001) and the monitors-configuration send window's
 deadline (ADR-0004, without which only the first resize of an agent connection
-reached the guest). The gate requires both resize modes in order.
+reached the guest). The gate requires both resize modes in order. Neither patch
+has been proposed upstream (ADR-0004 explains why), so when the pin moves, first
+check whether upstream closed either hole itself: a patch that no longer applies
+cleanly may mean the fix landed there, in which case drop ours rather than
+forcing it, and keep the gate, which is what proves the behaviour either way.
 Image references under `Integration/` are digest-pinned and checked; never write
 under `Vendor/` (its file set is hash-checked). Inside the Podman machine QEMU binds
 `0.0.0.0`; the host publishes on `127.0.0.1` only. A stale container of the gate's
