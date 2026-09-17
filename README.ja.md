@@ -6,13 +6,6 @@ macOS アプリです。spice-mac のアプリ本体を、接続内容の明示�
 
 [English](README.md)
 
-## 状態
-
-Spice Client は Apple Silicon / macOS 26 以降を対象とします。接続、ポータル、クリップボードの
-各境界は自動回帰テストとループバックサーバーによるシミュレーションで検証しています。
-実ゲストを用いた QEMU / Ravada との相互運用は未検証です。利用者の指定に従い、現在の接続試験は
-シミュレーションで行っています。実施範囲と限界は[検証記録](docs/ja/verification.ja.md)を参照してください。
-
 ## インストール
 
 macOS 向けリリースは **Developer ID 署名と Apple 公証（staple 済み）**を施しています。
@@ -26,6 +19,12 @@ brew install --cask nlink-jp/tap/spice-client
 または [Releases](https://github.com/nlink-jp/spice-client/releases) から
 `spice-client-vX.Y.Z-darwin-arm64.zip` をダウンロードして展開し、`Spice Client.app` を
 アプリケーションフォルダへ移動してください。
+
+## 状態
+
+Spice Client は Apple Silicon / macOS 26 以降を対象とします。実ゲストを用いた QEMU / Ravada との
+相互運用は未検証で、自動検証はポータル、SPICE 通信、クリップボード境界のループバックシミュレーションに
+対して行っています。実施範囲と限界は[検証記録](docs/ja/verification.ja.md)を参照してください。
 
 ## 使い方
 
@@ -79,7 +78,8 @@ open "dist/Spice Client.app"
 
 `make simulate` は一時的なループバック接続先、短命の合成証明書とチケットを作ります。
 VM は不要で、システムの信頼設定を書き換えず、利用者の実クリップボードにもアクセスしません。
-アプリには `.vv` パスを引数でも渡せます。`--version`、`--resource-check`、`--smoke-test` はローカル検証用です。
+アプリには `.vv` パスを引数でも渡せます。`--version`、`--resource-check`、`--smoke-test`、
+`--portal-smoke=<https url>`（そのバンドルでポータルを開き、WebKit が描画したかを報告）はローカル検証用です。
 独自アイコンの再生成は `swift scripts/create-icon.swift`、続いて
 `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns` を実行します。
 

@@ -7,14 +7,6 @@ protocol, display, input, audio, and guest integration.
 
 [日本語](README.ja.md)
 
-## Status
-
-Spice Client targets Apple Silicon and macOS 26 or later. Automated regressions
-and a loopback server simulation cover the connection, portal, and clipboard
-boundaries. QEMU/Ravada interoperability with a real guest remains unverified;
-the verification uses simulation at the user's request. See the
-[verification record](docs/en/verification.md) for the tested scope and limits.
-
 ## Install
 
 macOS releases are **Developer ID signed and Apple-notarized** (stapled). They
@@ -28,6 +20,14 @@ brew install --cask nlink-jp/tap/spice-client
 Or download `spice-client-vX.Y.Z-darwin-arm64.zip` from the
 [releases](https://github.com/nlink-jp/spice-client/releases), unpack it, and
 move `Spice Client.app` to Applications.
+
+## Status
+
+Spice Client targets Apple Silicon and macOS 26 or later. Interoperability with a
+real QEMU or Ravada guest has not been verified: the automated checks run against
+a loopback simulation of the portal, the SPICE wire protocol, and the clipboard
+boundary. See the [verification record](docs/en/verification.md) for the tested
+scope and limits.
 
 ## Use
 
@@ -87,7 +87,9 @@ open "dist/Spice Client.app"
 `make simulate` creates temporary loopback endpoints and short-lived synthetic
 certificates/tickets. It does not require a VM, write the system trust store, or
 access a real user's clipboard. The app also accepts a `.vv` path as an argument;
-`--version`, `--resource-check`, and `--smoke-test` support local verification.
+`--version`, `--resource-check`, `--smoke-test`, and `--portal-smoke=<https url>`
+(opens that portal in this exact bundle and reports whether WebKit rendered it)
+support local verification.
 To regenerate the original icon, run `swift scripts/create-icon.swift` followed
 by `iconutil -c icns dist/AppIcon.iconset -o Resources/AppIcon.icns`.
 

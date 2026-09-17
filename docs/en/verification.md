@@ -4,7 +4,8 @@ Date: 2026-09-17. Local Apple Silicon host, macOS 27, Xcode 27 with the Swift 6.
 toolchain (Swift tools version 6.3; corrected 2026-09-18, the original text named
 the tools version as the toolchain).
 Deployment target: macOS 26. The minimum OS version has not been tested separately.
-This is a local development build, not a published or notarized release.
+At that date the artifact was a local development build; the 2026-09-18 section
+below records the release gates.
 
 ## Executed
 
@@ -57,9 +58,10 @@ hashes, symbolic links, 28 native hash entries, and the local patch are tracked.
 The original reference's entire updater was omitted rather than inherited.
 
 The release verification rejects invalid archives and validates the actual archive
-when one is supplied. No Developer ID/notarization operation or public release was
-performed, and no release ZIP is claimed verified. No remote repository was created,
-no umbrella submodule/profile was changed, and the project remains under `_wip/`.
+when one is supplied. As of 2026-09-17 no Developer ID/notarization operation or
+public release had been performed, no remote repository existed, no umbrella
+submodule/profile had been changed, and the project stayed under `_wip/`; the
+2026-09-18 section records the release.
 The initial organization check reported existing changes in `cli-series` and
 `lab-series`. The final check reported three unrelated findings: `util-series`
 has a dirty tree, and its `active-lens` and `active-lens-gui` submodule pointers
