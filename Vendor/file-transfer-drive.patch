@@ -1,0 +1,49 @@
+# Local change 3 of 3 (spice-client ADR-0005), on top of patches 1 and 2.
+#
+# Serialises the file-transfer drive. Concurrent drives interleave at their
+# await points and invalidate each other's commit check, so a multi-chunk
+# transfer re-sends one offset for ever and the guest fails on duplicate data.
+diff --git a/Sources/SwiftSpice/SpiceClipboardManager.swift b/Sources/SwiftSpice/SpiceClipboardManager.swift
+--- a/Sources/SwiftSpice/SpiceClipboardManager.swift
++++ b/Sources/SwiftSpice/SpiceClipboardManager.swift
+@@ -1424,11 +1424,40 @@
+             ))
+         }
+     }
++
++    /// Serialises the drive. Each pass reads a job, awaits a read and a send, and
++    /// then commits only if the entry is still exactly what it read; two passes
++    /// interleaving at those awaits therefore invalidate each other and neither
++    /// commits, so a multi-chunk transfer re-sends the same offset for ever and the
++    /// guest fails on the duplicate data. Concurrent callers are real here: the
++    /// pasteboard poll drives transfers every 250 ms and so does every inbound agent
++    /// message (measured 2026-09-18: stuck at 32,000 of 64,000 bytes).
++    private var isDrivingFileTransfers = false
++    private var fileTransferDriveRequested = false
+ 
+     private func driveFileTransfers(
+         using session: SpiceSession,
+         expectedConnectionGeneration: UInt64? = nil
+     ) async {
++        guard !isDrivingFileTransfers else {
++            fileTransferDriveRequested = true
++            return
++        }
++        isDrivingFileTransfers = true
++        defer { isDrivingFileTransfers = false }
++        repeat {
++            fileTransferDriveRequested = false
++            await driveFileTransfersOnce(
++                using: session,
++                expectedConnectionGeneration: expectedConnectionGeneration
++            )
++        } while fileTransferDriveRequested
++    }
++
++    private func driveFileTransfersOnce(
++        using session: SpiceSession,
++        expectedConnectionGeneration: UInt64? = nil
++    ) async {
+         guard isAgentGenerationCurrent(expectedConnectionGeneration),
+               pendingActions.isEmpty,
+               state.isAgentConnected else {

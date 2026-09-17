@@ -565,13 +565,21 @@ public actor SpiceAgentManager {
             expectedConnectionGeneration: operation.connectionGeneration
         )
         guard isCurrent(operation) else { return }
-        guard let snapshot = await readPasteboard(authorization),
-              await isClipboardAuthorizationCurrent(authorization),
-              isCurrent(operation) else { return }
-        await execute(state.localPasteboardChanged(
-            changeCount: snapshot.changeCount,
-            text: snapshot.text
-        ), using: operation.session, expectedConnectionGeneration: operation.connectionGeneration)
+        // Denied access skips the read and the offer, and nothing else. This
+        // method is the only periodic path while automatic pasteboard
+        // synchronization is on, and the file-transfer and display-configuration
+        // drives below are gated on the same action queue, so returning here
+        // stalled both for the whole session whenever sharing was off — which is
+        // the default (measured 2026-09-18 with a live guest).
+        if let snapshot = await readPasteboard(authorization),
+           await isClipboardAuthorizationCurrent(authorization),
+           isCurrent(operation) {
+            await execute(state.localPasteboardChanged(
+                changeCount: snapshot.changeCount,
+                text: snapshot.text
+            ), using: operation.session, expectedConnectionGeneration: operation.connectionGeneration)
+        }
+        guard isCurrent(operation) else { return }
         await sendPendingDisplayConfiguration(
             using: operation.session,
             expectedConnectionGeneration: operation.connectionGeneration
@@ -1417,7 +1425,36 @@ public actor SpiceAgentManager {
         }
     }
 
+    /// Serialises the drive. Each pass reads a job, awaits a read and a send, and
+    /// then commits only if the entry is still exactly what it read; two passes
+    /// interleaving at those awaits therefore invalidate each other and neither
+    /// commits, so a multi-chunk transfer re-sends the same offset for ever and the
+    /// guest fails on the duplicate data. Concurrent callers are real here: the
+    /// pasteboard poll drives transfers every 250 ms and so does every inbound agent
+    /// message (measured 2026-09-18: stuck at 32,000 of 64,000 bytes).
+    private var isDrivingFileTransfers = false
+    private var fileTransferDriveRequested = false
+
     private func driveFileTransfers(
+        using session: SpiceSession,
+        expectedConnectionGeneration: UInt64? = nil
+    ) async {
+        guard !isDrivingFileTransfers else {
+            fileTransferDriveRequested = true
+            return
+        }
+        isDrivingFileTransfers = true
+        defer { isDrivingFileTransfers = false }
+        repeat {
+            fileTransferDriveRequested = false
+            await driveFileTransfersOnce(
+                using: session,
+                expectedConnectionGeneration: expectedConnectionGeneration
+            )
+        } while fileTransferDriveRequested
+    }
+
+    private func driveFileTransfersOnce(
         using session: SpiceSession,
         expectedConnectionGeneration: UInt64? = nil
     ) async {

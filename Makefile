@@ -16,7 +16,7 @@ BREW_BUNDLE_ID := jp.nlink.spice-client
 BREW_MACOS_FLOOR := :tahoe
 include scripts/release-brew.mk
 
-.PHONY: test lint doctor build run package verify-release clean test-vendor simulate live-peer live-peer-clean
+.PHONY: test lint doctor build run package verify-release clean test-vendor verify-vendor simulate live-peer live-peer-clean
 test:
 	$(SWIFT) test --disable-sandbox -Xswiftc -warnings-as-errors
 	python3 scripts/check-project.py
@@ -24,6 +24,10 @@ test:
 
 test-vendor:
 	$(SWIFT) test --package-path Vendor/SwiftSpice --no-parallel --disable-sandbox -Xswiftc -warnings-as-errors
+
+# Needs the network: fetches the pinned upstream and replays Vendor/*.patch.
+verify-vendor:
+	bash scripts/verify-vendor-patches.sh
 
 simulate:
 	python3 scripts/simulate.py

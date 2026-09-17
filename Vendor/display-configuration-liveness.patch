@@ -1,10 +1,30 @@
-# Local change 2 of 2, applied after clipboard-boundary.patch (spice-client ADR-0004).
+# Local change 2 of 3 (spice-client ADR-0004), on top of patch 1.
 #
-# Bounds the monitors-configuration send window with a deadline. Upstream closes
-# the window only on VD_AGENT_REPLY; QEMU's virtio-gpu path consumes the message
-# in client_monitors_config and never replies, so the first resize latched the
-# sender for the life of the agent connection and every later resize was dropped
-# while the session still advertised monitor configuration.
+# Bounds the monitors-configuration send window with a deadline. Upstream
+# closes it only on VD_AGENT_REPLY, which QEMU's virtio-gpu path never sends,
+# so the first resize latched the sender for the life of the agent connection
+# and every later resize was dropped.
+diff --git a/Sources/SwiftSpice/SpiceClipboardManager.swift b/Sources/SwiftSpice/SpiceClipboardManager.swift
+--- a/Sources/SwiftSpice/SpiceClipboardManager.swift
++++ b/Sources/SwiftSpice/SpiceClipboardManager.swift
+@@ -1185,7 +1185,7 @@
+     ) async {
+         guard isAgentGenerationCurrent(expectedConnectionGeneration),
+               pendingActions.isEmpty,
+-              let configuration = displayCoordinator.nextToSend,
++              let configuration = displayCoordinator.nextToSend(now: ContinuousClock.now),
+               state.isAgentConnected else {
+             return
+         }
+@@ -1211,7 +1211,7 @@
+                 expectedConnectionGeneration: expectedConnectionGeneration
+             )
+             guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
+-            displayCoordinator.didSend(configuration)
++            displayCoordinator.didSend(configuration, at: ContinuousClock.now)
+             emitDisplay(.sent(configuration))
+         } catch let error as SpiceError {
+             guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
 diff --git a/Sources/SwiftSpice/SpiceDisplayConfiguration.swift b/Sources/SwiftSpice/SpiceDisplayConfiguration.swift
 --- a/Sources/SwiftSpice/SpiceDisplayConfiguration.swift
 +++ b/Sources/SwiftSpice/SpiceDisplayConfiguration.swift
@@ -86,27 +106,6 @@ diff --git a/Sources/SwiftSpice/SpiceDisplayConfiguration.swift b/Sources/SwiftS
 +        inFlightExpiry = nil
      }
  }
-diff --git a/Sources/SwiftSpice/SpiceClipboardManager.swift b/Sources/SwiftSpice/SpiceClipboardManager.swift
---- a/Sources/SwiftSpice/SpiceClipboardManager.swift
-+++ b/Sources/SwiftSpice/SpiceClipboardManager.swift
-@@ -1177,7 +1177,7 @@
-     ) async {
-         guard isAgentGenerationCurrent(expectedConnectionGeneration),
-               pendingActions.isEmpty,
--              let configuration = displayCoordinator.nextToSend,
-+              let configuration = displayCoordinator.nextToSend(now: ContinuousClock.now),
-               state.isAgentConnected else {
-             return
-         }
-@@ -1203,7 +1203,7 @@
-                 expectedConnectionGeneration: expectedConnectionGeneration
-             )
-             guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
--            displayCoordinator.didSend(configuration)
-+            displayCoordinator.didSend(configuration, at: ContinuousClock.now)
-             emitDisplay(.sent(configuration))
-         } catch let error as SpiceError {
-             guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
 diff --git a/Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift b/Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift
 --- a/Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift
 +++ b/Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift

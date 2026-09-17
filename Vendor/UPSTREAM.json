@@ -5,13 +5,18 @@
   "patches": [
     {
       "file": "clipboard-boundary.patch",
-      "sha256": "aecda582523ea20965c6eb533e758a2d9aeb5c83c4b56dd2afb78b54f9844433",
+      "sha256": "b5f3b0054dc57bc0abef19649f802333d04652969b40ef2c32e5fa98009aa7af",
       "decision": "ADR-0001"
     },
     {
       "file": "display-configuration-liveness.patch",
-      "sha256": "3bcec4f548a4b1dd669f77f693743246bd0d37b0f90a1b6afeaf38fd9871df23",
+      "sha256": "eb8e3bfa07f436129a8b65b922cf94daad4ca38fcd7df9ca77abad17a78b1e4d",
       "decision": "ADR-0004"
+    },
+    {
+      "file": "file-transfer-drive.patch",
+      "sha256": "1ef1f42529d2ff386ab5310162d42f6c057885958a80b5c1c9923bc9f021e0e1",
+      "decision": "ADR-0005"
     }
   ],
   "native_sha256": {
@@ -312,7 +317,7 @@
     "Sources/SwiftSpice/SpiceAgentEventMailbox.swift": "464e12a9f7d1446dae7a94efb79cc5b80d0f00b195cf04a5593498952b1fd478",
     "Sources/SwiftSpice/SpiceAudioCaptureSource.swift": "77d8d147a157b0b47a92485aa51fc403a47f0ecfb56ed28dc94d874a4a60b9cf",
     "Sources/SwiftSpice/SpiceAudioPlaybackSink.swift": "ed16b15dd17644616eae593461d7a2db8a867846da994e86d9ea39dd9cc763da",
-    "Sources/SwiftSpice/SpiceClipboardManager.swift": "c48399a92713371309fd81e20de85cd0dfa02bd001539bca750bec8ca7a14b18",
+    "Sources/SwiftSpice/SpiceClipboardManager.swift": "d8f66dc26e90fee605beeeca92252dddeceb23ce5fb78ec6b37b37aeea8835dc",
     "Sources/SwiftSpice/SpiceDesktopSource.swift": "37cab76b1e8eb04aae2199ac992dae75fa24a05b42a7e7fecfd0a22651d3c977",
     "Sources/SwiftSpice/SpiceDesktopView.swift": "e6683f395585f3d38554eafca91e781ba22df60c378da336857c99f29ffa8c11",
     "Sources/SwiftSpice/SpiceDisplayConfiguration.swift": "1411273b027c988790029175e8950758eeed3b5828372edf22b8f9fc026ee52c",
