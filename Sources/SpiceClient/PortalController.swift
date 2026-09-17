@@ -18,6 +18,9 @@ final class PortalController: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var delivered = false
     private let clock: PortalCookieClock
     private let evaluateTrust: @MainActor (SecTrust) -> Bool
+    /// true once the main frame finished loading; false when loading or the
+    /// WebContent process failed. Local verification of the signed bundle.
+    var onNavigationFinished: (@MainActor (Bool) -> Void)?
 
     init(url: URL, offer: @escaping @MainActor (ConnectionPlan, String) -> Void,
          report: @escaping @MainActor (String) -> Void,
@@ -84,8 +87,14 @@ final class PortalController: NSObject, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         await authenticate(challenge)
     }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if !closed { onNavigationFinished?(true) }
+    }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        if (error as NSError).code != NSURLErrorCancelled && !closed { report(L.text("portalFailed")) }
+        if (error as NSError).code != NSURLErrorCancelled && !closed { report(L.text("portalFailed")); onNavigationFinished?(false) }
+    }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if !closed { report(L.text("portalFailed")); onNavigationFinished?(false) }
     }
     private func authenticate(_ challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         guard !closed else { return (.cancelAuthenticationChallenge, nil) }

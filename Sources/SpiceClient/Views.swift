@@ -86,6 +86,7 @@ struct SettingsView: View {
 struct SessionView: View {
     @Bindable var controller: SessionController
     @State private var showDiagnostics = false
+    private var report: String { AppInfo.versionLine + "\n" + controller.summary }
     private var phase: String {
         if let failure = controller.failure { return L.text(failure.rawValue) }
         switch controller.lifecycle.phase {
@@ -120,10 +121,10 @@ struct SessionView: View {
             if showDiagnostics {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(L.text("diagnosticsHelp")).font(.caption)
-                    ScrollView { Text(controller.summary).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                    ScrollView { Text(report).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                     Button(L.text("copy")) {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(AppInfo.versionLine + "\n" + controller.summary, forType: .string)
+                        NSPasteboard.general.setString(report, forType: .string)
                     }.disabled(controller.summary.isEmpty)
                 }.padding().frame(height: 220)
             }

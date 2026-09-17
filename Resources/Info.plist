@@ -5,7 +5,7 @@
 <key>CFBundleName</key><string>Spice Client</string>
 <key>CFBundleDisplayName</key><string>Spice Client</string>
 <key>CFBundleIdentifier</key><string>jp.nlink.spice-client</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleVersion</key><string>${VERSION}</string>
 <key>CFBundleShortVersionString</key><string>${VERSION}</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>

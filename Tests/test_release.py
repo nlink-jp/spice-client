@@ -77,7 +77,7 @@ class LinkedSDKTests(unittest.TestCase):
         release.require_linked_sdk(Path('fixture'), '27.0', read=lambda _: '27.0')
 
     def test_installed_sdk_is_a_version_number(self):
-        self.assertRegex(release.current_sdk(), r'^\d+\.\d+$')
+        self.assertRegex(release.current_sdk(), r'^\d+(\.\d+)+$')
 
 
 if __name__ == '__main__':

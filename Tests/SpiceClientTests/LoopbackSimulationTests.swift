@@ -66,6 +66,8 @@ struct LoopbackSimulationTests {
                 return valid
             })
             defer { portal.close(); model.stop() }
+            var finished: Bool?
+            portal.onNavigationFinished = { finished = $0 }
             try await eventually { model.pending != nil || model.message != nil }
             #expect(model.message == nil)
             let candidate = try #require(model.pending)
@@ -73,6 +75,8 @@ struct LoopbackSimulationTests {
             model.cancel(candidate.id)
             model.confirm(candidate.id, clipboard: true)
             #expect(model.sessions.isEmpty)
+            try await eventually { finished != nil }
+            #expect(finished == true)
         }
     }
     @Test func realSPICEBootstrapInputFailuresAndCancellation() async throws {

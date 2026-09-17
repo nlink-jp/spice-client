@@ -63,6 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var terminating = false
     var replyToTermination: @MainActor (NSApplication) -> Void = { $0.reply(toApplicationShouldTerminate: true) }
 
+    /// `--portal-smoke=<https url>`: open that portal, report whether real WebKit
+    /// rendered it in this exact bundle (signature and runtime included), then quit.
+    static var portalSmokeURL: URL? {
+        CommandLine.arguments.first { $0.hasPrefix("--portal-smoke=") }
+            .flatMap { URL(string: String($0.dropFirst("--portal-smoke=".count))) }
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMenu(target: self)
         model.openSession = { [weak self] controller in self?.showSession(controller) }
@@ -71,6 +77,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         showLauncher()
         for path in CommandLine.arguments.dropFirst() where !path.hasPrefix("-") && path.lowercased().hasSuffix(".vv") {
             model.receive(URL(fileURLWithPath: path))
+        }
+        if let url = Self.portalSmokeURL {
+            fputs("Smoke: opening portal\n", stderr)
+            model.openPortal(at: url)
+            if model.message != nil { fputs("Smoke: portal rejected\n", stderr); exit(1) }
+            perform(#selector(portalSmokeTimedOut), with: nil, afterDelay: 30)
         }
         if CommandLine.arguments.contains("--smoke-test") {
             fputs("Smoke: launcher ready\n", stderr)
@@ -124,8 +136,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         if controller.plan.fullscreen { window.toggleFullScreen(nil) }
     }
+    @objc func portalSmokeTimedOut() { fputs("Smoke: portal timed out\n", stderr); exit(1) }
     private func showPortal(_ portal: PortalController) {
         for (window, old) in Array(portals) { old.close(); window.close() }
+        if Self.portalSmokeURL != nil {
+            portal.onNavigationFinished = { [weak self] loaded in
+                guard let self else { return }
+                NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(self.portalSmokeTimedOut), object: nil)
+                fputs(loaded ? "Smoke: portal loaded\n" : "Smoke: portal failed\n", stderr)
+                guard loaded else { exit(1) }
+                NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0.2)
+            }
+        }
         let window = makeWindow("Ravada", content: PortalWebView(controller: portal), size: .init(width: 1100, height: 760))
         portals[window] = portal; window.makeKeyAndOrderFront(nil)
     }

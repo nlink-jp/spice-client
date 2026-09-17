@@ -30,10 +30,12 @@ for name, expected in upstream['native_sha256'].items():
 info = plistlib.loads((root / 'Resources/Info.plist').read_bytes())
 require(info['CFBundleIdentifier'] == 'jp.nlink.spice-client', 'Wrong application identity')
 require(not any(key.startswith('SU') for key in info), 'Unexpected updater configuration')
-require(info['CFBundleShortVersionString'] == '${VERSION}',
-        'Info.plist must carry the ${VERSION} placeholder; the version is git describe output written at build time')
+for key in ('CFBundleShortVersionString', 'CFBundleVersion'):
+    require(info[key] == '${VERSION}',
+            f'Info.plist {key} must carry the ${{VERSION}} placeholder; the version is git describe output written at build time')
 for path in root.glob('Sources/**/*.swift'):
-    require(re.search(r'\b\d+\.\d+\.\d+\b', path.read_text()) is None,
+    # Three dotted numbers not adjoined by a fourth: 1.2.3 yes, 127.0.0.1 no.
+    require(re.search(r'(?<![\d.])\d+\.\d+\.\d+(?![\d.])', path.read_text()) is None,
             f'Version literal in {path.relative_to(root)}; read CFBundleShortVersionString instead')
 minimum = re.search(r'\.macOS\(\.v(\d+)\)', (root / 'Package.swift').read_text())
 require(minimum is not None, 'No macOS deployment target in Package.swift')

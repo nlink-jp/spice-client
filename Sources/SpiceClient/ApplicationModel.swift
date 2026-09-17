@@ -81,7 +81,12 @@ final class ApplicationModel {
     }
     func cancel(_ id: UUID) { inbox.cancel(id: id); files.removeValue(forKey: id); pending = nil; portal?.allowNextCandidate() }
     func openPortal() {
-        guard let url = URL(string: portalURL), PortalOrigin(url) != nil else { message = L.text("portalFailed"); return }
+        guard let url = URL(string: portalURL) else { message = L.text("portalFailed"); return }
+        openPortal(at: url)
+    }
+    /// Opens a portal without touching the saved portal URL.
+    func openPortal(at url: URL) {
+        guard PortalOrigin(url) != nil else { message = L.text("portalFailed"); return }
         portal?.close()
         do {
             let controller = try PortalController(url: url, offer: { [weak self] plan, source in

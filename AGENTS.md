@@ -44,6 +44,11 @@ bundle's `--version`, `verify-release.py` checks it again in the final archive, 
 `check-project.py` rejects version literals under `Sources/`. `make package` refuses
 a `VERSION` that is not exactly a `vX.Y.Z` tag.
 
+WebKit under the Hardened Runtime is observable only in the signed bundle: after
+`make package`, run the notarized app with `--portal-smoke=<https url>` and require
+`Smoke: portal loaded` before uploading. Tests run in an unsigned test host and
+cannot stand in for it.
+
 Use `make` for builds and `dist/` for deliverables. Keep both language documents
 current; preserve original copyright notices. Tests accompany behavior changes.
 Read `Vendor/SwiftSpice/AGENTS.md` before dependency changes. Keep its original

@@ -22,7 +22,9 @@ rm -rf "$APP"
 rm -f "$APP.notarized"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Licenses"
 cp "$BIN/SpiceClient" "$APP/Contents/MacOS/SpiceClient"
-sed "s/\${VERSION}/${VERSION}/g" Resources/Info.plist > "$APP/Contents/Info.plist"
+cp Resources/Info.plist "$APP/Contents/Info.plist"
+plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
+plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 if grep -q '${VERSION}' "$APP/Contents/Info.plist"; then echo "build-app: version placeholder not substituted" >&2; exit 1; fi
 plutil -lint -s "$APP/Contents/Info.plist"
 for name in SwiftSpice_SwiftSpice SwiftSpice_SpiceMetalCompositor; do

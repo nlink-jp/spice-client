@@ -41,8 +41,9 @@ build: doctor
 run: build
 	open "$(APP)"
 
-package: test
+package:
 	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "package: '$(VERSION)' is not a release tag; tag the commit or pass VERSION=vX.Y.Z" >&2; exit 1; }
+	$(MAKE) test
 	$(MAKE) build
 	scripts/codesign-darwin-app.sh "$(APP)" "$(CODESIGN_IDENTITY)"
 	scripts/notarize-darwin-app.sh "$(APP)" "$(NOTARY_PROFILE)"
