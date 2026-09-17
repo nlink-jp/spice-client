@@ -96,6 +96,23 @@ archive uploaded to GitHub was downloaded back with an identical SHA-256
 Homebrew cask was generated from that archive. `make test-vendor` and the real-peer
 gate remain as stated above.
 
+## Live peer gate (2026-09-18, ADR-0002)
+
+`make live-peer` passed on commit `8850484` with a clean tree: a real spice-server
+(`libspice-server1 0.15.1-1build2`, `qemu-system-arm 1:8.2.2+ds-0ubuntu1.18`) in the
+digest-pinned Ubuntu 24.04 image under the Podman machine with TCG, and an Alpine
+`linux-virt 6.12.110-r0` guest built from the digest-pinned Alpine 3.22 image. Through
+the application's own `ConnectionPlan` → `SessionController` → SwiftSpice path, the
+session connected with the per-run ticket, a visible desktop subscription observed real
+frame revisions, the injected A key was recorded by the guest's evdev stream, a wrong
+ticket ended in an authentication failure with the peer surviving, and a second session
+connected after disconnect. The diagnostics summary contained neither ticket nor host.
+Five boots (two spike, three gate runs) reached the guest markers 4 s after `podman run`;
+the host listener was `gvproxy` on `127.0.0.1` only and the ticket was absent from the
+container's command line. Not covered: audio, H.264, the Ravada portal, the guest agent
+(clipboard, resize), and TLS to the SPICE server. The pass record lives outside git and
+`make package` requires one for the release commit.
+
 ## Reproduce
 
 Run `make test`, `make test-vendor`, `make simulate`, then `make build`.

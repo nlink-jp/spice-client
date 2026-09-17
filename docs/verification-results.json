@@ -1,7 +1,7 @@
 {
   "date": "2026-09-17",
   "application": "Spice Client",
-  "real_peer": false,
+  "real_peer": "minimal guest via make live-peer; no Ravada, agent, audio or H.264",
   "app_binary_sha256": "fdfac627d3161218c89ae07d032c866c22a06f758a12565deebd42310400093a",
   "commands": {
     "make test": {
@@ -66,5 +66,27 @@
     "archive_sha256": "19f920fc362bcd27ae508392acf8a84d2dcab51a1dde4140398001152fb75131",
     "url": "https://github.com/nlink-jp/spice-client/releases/tag/v0.1.0",
     "homebrew_cask": "nlink-jp/tap/spice-client"
+  },
+  "live_peer": {
+    "date": "2026-09-18",
+    "adr": "0002",
+    "commit": "8850484",
+    "passed": true,
+    "image_packages": "libspice-server1=0.15.1-1build2 qemu-system-arm=1:8.2.2+ds-0ubuntu1.18 qemu-system-modules-spice=1:8.2.2+ds-0ubuntu1.18",
+    "guest_kernel": "linux-virt-6.12.110-r0",
+    "boots_to_markers_seconds": [
+      4,
+      4,
+      4,
+      4,
+      4
+    ],
+    "not_covered": [
+      "audio",
+      "h264",
+      "ravada-portal",
+      "guest-agent",
+      "spice-tls"
+    ]
   }
 }

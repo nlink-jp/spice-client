@@ -22,9 +22,11 @@ brew install --cask nlink-jp/tap/spice-client
 
 ## 状態
 
-Spice Client は Apple Silicon / macOS 26 以降を対象とします。実ゲストを用いた QEMU / Ravada との
-相互運用は未検証で、自動検証はポータル、SPICE 通信、クリップボード境界のループバックシミュレーションに
-対して行っています。実施範囲と限界は[検証記録](docs/ja/verification.ja.md)を参照してください。
+Spice Client は Apple Silicon / macOS 26 以降を対象とします。接続、チケット、表示フレーム、カーソル、
+キーボード入力、停止は、`make live-peer` により実物の spice-server（QEMU 8.2、spice-server 0.15）と
+最小 Linux ゲストに対して検証しています。ポータルとクリップボードの境界はループバックシミュレーションで
+検証しています。Ravada ポータル、SPICE エージェント付きデスクトップゲスト（クリップボード、リサイズ）、
+音声、H.264 は未検証です。実施範囲と限界は[検証記録](docs/ja/verification.ja.md)を参照してください。
 
 ## 使い方
 

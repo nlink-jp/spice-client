@@ -23,11 +23,13 @@ move `Spice Client.app` to Applications.
 
 ## Status
 
-Spice Client targets Apple Silicon and macOS 26 or later. Interoperability with a
-real QEMU or Ravada guest has not been verified: the automated checks run against
-a loopback simulation of the portal, the SPICE wire protocol, and the clipboard
-boundary. See the [verification record](docs/en/verification.md) for the tested
-scope and limits.
+Spice Client targets Apple Silicon and macOS 26 or later. Connection, ticket,
+display frames, cursor, keyboard input, and shutdown are verified against a real
+spice-server (QEMU 8.2, spice-server 0.15) with a minimal Linux guest through
+`make live-peer`; the portal and clipboard boundaries run against a loopback
+simulation. A Ravada portal, a desktop guest with the SPICE agent (clipboard,
+resize), audio, and H.264 remain unverified. See the
+[verification record](docs/en/verification.md) for the tested scope and limits.
 
 ## Use
 

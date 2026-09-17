@@ -86,6 +86,6 @@ The repository is `github.com/nlink-jp/spice-client`, a `lab-series` submodule
 (ADR-0001 amendment of 2026-09-18). Releases are `make package`: Developer ID signing,
 notarization, stapling, the final-archive check, then `make brew` for the cask; keep
 the vendored `scripts/{gen-brew.sh,cask.rb.tmpl,release-brew.mk}` identical to
-`.github/templates/`. Real-peer QEMU/Ravada validation stays open; releases rest on
-simulation by the user's decision, and `docs/{en,ja}/verification*` says so. Go checks
-do not apply to this Swift project.
+`.github/templates/`. A real spice-server with a minimal guest is covered by `make live-peer` (ADR-0002);
+a Ravada portal, an agent guest, audio and H.264 remain unverified, and
+`docs/{en,ja}/verification*` says so. Go checks do not apply to this Swift project.

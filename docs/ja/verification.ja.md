@@ -77,6 +77,20 @@ Hardened Runtime での Developer ID 署名を行い、Apple の公証サービ�
 実行ファイルは `fdfac627d3161218c89ae07d032c866c22a06f758a12565deebd42310400093a`）。Homebrew cask は
 このアーカイブから生成した。`make test-vendor` と実ピアのゲートは上記のとおり未完。
 
+## 実ピアゲート（2026-09-18、ADR-0002）
+
+`make live-peer` はコミット `8850484` のクリーンなツリーで合格した。相手は、digest 固定の Ubuntu 24.04
+イメージ内の実物の spice-server（`libspice-server1 0.15.1-1build2`、`qemu-system-arm 1:8.2.2+ds-0ubuntu1.18`）を
+Podman machine 上で TCG で動かしたものと、digest 固定の Alpine 3.22 イメージから作った Alpine
+`linux-virt 6.12.110-r0` ゲスト。アプリ自身の `ConnectionPlan` → `SessionController` → SwiftSpice 経路で、
+実行ごとのチケットで接続し、visible な desktop 購読が実物のフレームリビジョンを観測し、注入した A キーが
+ゲストの evdev ストリームに記録され、誤ったチケットは認証失敗で終わってピアは生き残り、切断後に 2 本目の
+セッションが接続した。診断サマリにチケットとホストは含まれなかった。5 回の起動（スパイク 2 回、ゲート 3 回）
+はいずれも `podman run` から 4 秒でゲストのマーカーに達した。ホスト側のリスナーは `127.0.0.1` の `gvproxy`
+だけで、チケットはコンテナのコマンドラインに現れなかった。対象外: 音声、H.264、Ravada ポータル、
+ゲストエージェント（クリップボード、リサイズ）、SPICE サーバーへの TLS。合格記録は git 外にあり、
+`make package` はリリースコミットの合格記録を要求する。
+
 ## 再実行
 
 `make test`、`make test-vendor`、`make simulate`、`make build` の順に実行します。
