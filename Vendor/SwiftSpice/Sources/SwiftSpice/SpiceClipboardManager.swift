@@ -1177,7 +1177,7 @@ public actor SpiceAgentManager {
     ) async {
         guard isAgentGenerationCurrent(expectedConnectionGeneration),
               pendingActions.isEmpty,
-              let configuration = displayCoordinator.nextToSend,
+              let configuration = displayCoordinator.nextToSend(now: ContinuousClock.now),
               state.isAgentConnected else {
             return
         }
@@ -1203,7 +1203,7 @@ public actor SpiceAgentManager {
                 expectedConnectionGeneration: expectedConnectionGeneration
             )
             guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
-            displayCoordinator.didSend(configuration)
+            displayCoordinator.didSend(configuration, at: ContinuousClock.now)
             emitDisplay(.sent(configuration))
         } catch let error as SpiceError {
             guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }

@@ -102,27 +102,57 @@ public enum SpiceDisplayConfigurationEvent: Sendable, Equatable {
 }
 
 package struct DisplayConfigurationCoordinator: Sendable {
+    /// How long a sent configuration keeps the send window closed while it is
+    /// unacknowledged.
+    ///
+    /// The window exists so that a drag does not flood the guest agent: while one
+    /// configuration is in flight only the latest is kept. A reply is not
+    /// guaranteed, though. With virtio-gpu, QEMU consumes
+    /// `VD_AGENT_MONITORS_CONFIG` in its own `client_monitors_config` handler and
+    /// sends no `VD_AGENT_REPLY`, so a window that only a reply can close latches
+    /// for the life of the agent connection: the first resize is delivered and
+    /// every later one is silently dropped while the session still advertises
+    /// monitor configuration (measured against QEMU 8.2.2 and 10.0.13,
+    /// 2026-09-18). Bounding the wait keeps the coalescing and restores liveness.
+    package static let acknowledgementTimeout: Duration = .seconds(2)
+
     private(set) package var desired: SpiceDisplayConfiguration?
     private(set) package var inFlight: SpiceDisplayConfiguration?
+    private(set) package var inFlightExpiry: ContinuousClock.Instant?
 
     package mutating func queue(_ configuration: SpiceDisplayConfiguration) {
         desired = configuration
     }
 
-    package var nextToSend: SpiceDisplayConfiguration? {
-        inFlight == nil ? desired : nil
+    /// The configuration to send now: the latest queued one, unless a sent
+    /// configuration is still inside its acknowledgement window.
+    package func nextToSend(now: ContinuousClock.Instant) -> SpiceDisplayConfiguration? {
+        guard let desired else {
+            return nil
+        }
+        if let inFlightExpiry, now < inFlightExpiry {
+            return nil
+        }
+        return desired
     }
 
-    package mutating func didSend(_ configuration: SpiceDisplayConfiguration) {
-        guard nextToSend == configuration else {
+    package mutating func didSend(
+        _ configuration: SpiceDisplayConfiguration,
+        at instant: ContinuousClock.Instant
+    ) {
+        guard nextToSend(now: instant) == configuration else {
             return
         }
         desired = nil
         inFlight = configuration
+        inFlightExpiry = instant.advanced(by: Self.acknowledgementTimeout)
     }
 
     package mutating func didReceiveReply() -> SpiceDisplayConfiguration? {
-        defer { inFlight = nil }
+        defer {
+            inFlight = nil
+            inFlightExpiry = nil
+        }
         return inFlight
     }
 
@@ -131,6 +161,7 @@ package struct DisplayConfigurationCoordinator: Sendable {
             desired = inFlight
         }
         inFlight = nil
+        inFlightExpiry = nil
     }
 
     package mutating func discardDesired() {
@@ -140,5 +171,6 @@ package struct DisplayConfigurationCoordinator: Sendable {
     package mutating func reset() {
         desired = nil
         inFlight = nil
+        inFlightExpiry = nil
     }
 }

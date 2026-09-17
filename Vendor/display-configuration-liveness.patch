@@ -1,0 +1,200 @@
+# Local change 2 of 2, applied after clipboard-boundary.patch (spice-client ADR-0004).
+#
+# Bounds the monitors-configuration send window with a deadline. Upstream closes
+# the window only on VD_AGENT_REPLY; QEMU's virtio-gpu path consumes the message
+# in client_monitors_config and never replies, so the first resize latched the
+# sender for the life of the agent connection and every later resize was dropped
+# while the session still advertised monitor configuration.
+diff --git a/Sources/SwiftSpice/SpiceDisplayConfiguration.swift b/Sources/SwiftSpice/SpiceDisplayConfiguration.swift
+--- a/Sources/SwiftSpice/SpiceDisplayConfiguration.swift
++++ b/Sources/SwiftSpice/SpiceDisplayConfiguration.swift
+@@ -102,27 +102,57 @@
+ }
+ 
+ package struct DisplayConfigurationCoordinator: Sendable {
++    /// How long a sent configuration keeps the send window closed while it is
++    /// unacknowledged.
++    ///
++    /// The window exists so that a drag does not flood the guest agent: while one
++    /// configuration is in flight only the latest is kept. A reply is not
++    /// guaranteed, though. With virtio-gpu, QEMU consumes
++    /// `VD_AGENT_MONITORS_CONFIG` in its own `client_monitors_config` handler and
++    /// sends no `VD_AGENT_REPLY`, so a window that only a reply can close latches
++    /// for the life of the agent connection: the first resize is delivered and
++    /// every later one is silently dropped while the session still advertises
++    /// monitor configuration (measured against QEMU 8.2.2 and 10.0.13,
++    /// 2026-09-18). Bounding the wait keeps the coalescing and restores liveness.
++    package static let acknowledgementTimeout: Duration = .seconds(2)
++
+     private(set) package var desired: SpiceDisplayConfiguration?
+     private(set) package var inFlight: SpiceDisplayConfiguration?
++    private(set) package var inFlightExpiry: ContinuousClock.Instant?
+ 
+     package mutating func queue(_ configuration: SpiceDisplayConfiguration) {
+         desired = configuration
+     }
+ 
+-    package var nextToSend: SpiceDisplayConfiguration? {
+-        inFlight == nil ? desired : nil
++    /// The configuration to send now: the latest queued one, unless a sent
++    /// configuration is still inside its acknowledgement window.
++    package func nextToSend(now: ContinuousClock.Instant) -> SpiceDisplayConfiguration? {
++        guard let desired else {
++            return nil
++        }
++        if let inFlightExpiry, now < inFlightExpiry {
++            return nil
++        }
++        return desired
+     }
+ 
+-    package mutating func didSend(_ configuration: SpiceDisplayConfiguration) {
+-        guard nextToSend == configuration else {
++    package mutating func didSend(
++        _ configuration: SpiceDisplayConfiguration,
++        at instant: ContinuousClock.Instant
++    ) {
++        guard nextToSend(now: instant) == configuration else {
+             return
+         }
+         desired = nil
+         inFlight = configuration
++        inFlightExpiry = instant.advanced(by: Self.acknowledgementTimeout)
+     }
+ 
+     package mutating func didReceiveReply() -> SpiceDisplayConfiguration? {
+-        defer { inFlight = nil }
++        defer {
++            inFlight = nil
++            inFlightExpiry = nil
++        }
+         return inFlight
+     }
+ 
+@@ -131,6 +161,7 @@
+             desired = inFlight
+         }
+         inFlight = nil
++        inFlightExpiry = nil
+     }
+ 
+     package mutating func discardDesired() {
+@@ -140,5 +171,6 @@
+     package mutating func reset() {
+         desired = nil
+         inFlight = nil
++        inFlightExpiry = nil
+     }
+ }
+diff --git a/Sources/SwiftSpice/SpiceClipboardManager.swift b/Sources/SwiftSpice/SpiceClipboardManager.swift
+--- a/Sources/SwiftSpice/SpiceClipboardManager.swift
++++ b/Sources/SwiftSpice/SpiceClipboardManager.swift
+@@ -1177,7 +1177,7 @@
+     ) async {
+         guard isAgentGenerationCurrent(expectedConnectionGeneration),
+               pendingActions.isEmpty,
+-              let configuration = displayCoordinator.nextToSend,
++              let configuration = displayCoordinator.nextToSend(now: ContinuousClock.now),
+               state.isAgentConnected else {
+             return
+         }
+@@ -1203,7 +1203,7 @@
+                 expectedConnectionGeneration: expectedConnectionGeneration
+             )
+             guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
+-            displayCoordinator.didSend(configuration)
++            displayCoordinator.didSend(configuration, at: ContinuousClock.now)
+             emitDisplay(.sent(configuration))
+         } catch let error as SpiceError {
+             guard isAgentGenerationCurrent(expectedConnectionGeneration) else { return }
+diff --git a/Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift b/Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift
+--- a/Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift
++++ b/Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift
+@@ -3,6 +3,14 @@
+ 
+ @Suite("Dynamic resolution request coalescing")
+ struct DisplayConfigurationCoordinatorTests {
++    private let start = ContinuousClock.now
++    private var withinWindow: ContinuousClock.Instant {
++        start.advanced(by: DisplayConfigurationCoordinator.acknowledgementTimeout - .milliseconds(1))
++    }
++    private var afterWindow: ContinuousClock.Instant {
++        start.advanced(by: DisplayConfigurationCoordinator.acknowledgementTimeout + .milliseconds(1))
++    }
++
+     @Test func keepsOnlyLatestResizeWhileWaitingForReply() throws {
+         var coordinator = DisplayConfigurationCoordinator()
+         let first = SpiceDisplayConfiguration(width: 1_024, height: 768)
+@@ -10,31 +18,64 @@
+         let latest = SpiceDisplayConfiguration(width: 1_440, height: 900)
+ 
+         coordinator.queue(first)
+-        #expect(coordinator.nextToSend == first)
+-        coordinator.didSend(first)
++        #expect(coordinator.nextToSend(now: start) == first)
++        coordinator.didSend(first, at: start)
+         coordinator.queue(intermediate)
+         coordinator.queue(latest)
+ 
+-        #expect(coordinator.nextToSend == nil)
++        #expect(coordinator.nextToSend(now: withinWindow) == nil)
+         #expect(coordinator.didReceiveReply() == first)
+-        #expect(coordinator.nextToSend == latest)
++        #expect(coordinator.nextToSend(now: withinWindow) == latest)
+     }
+ 
++    /// A peer that never replies must not latch the sender: with virtio-gpu QEMU
++    /// consumes the monitors configuration and sends no reply, which used to drop
++    /// every resize after the first one for the life of the agent connection.
++    @Test func unacknowledgedRequestReleasesTheWindowAfterItsTimeout() {
++        var coordinator = DisplayConfigurationCoordinator()
++        let first = SpiceDisplayConfiguration(width: 1_024, height: 768)
++        let latest = SpiceDisplayConfiguration(width: 1_280, height: 800)
++
++        coordinator.queue(first)
++        coordinator.didSend(first, at: start)
++        coordinator.queue(latest)
++
++        #expect(coordinator.nextToSend(now: withinWindow) == nil)
++        #expect(coordinator.nextToSend(now: afterWindow) == latest)
++
++        coordinator.didSend(latest, at: afterWindow)
++        #expect(coordinator.inFlight == latest)
++        #expect(coordinator.nextToSend(now: afterWindow) == nil)
++    }
++
++    /// An expired window alone sends nothing: liveness must not turn into a
++    /// resend loop of a configuration the guest already has.
++    @Test func expiredWindowWithNothingQueuedSendsNothing() {
++        var coordinator = DisplayConfigurationCoordinator()
++        let only = SpiceDisplayConfiguration(width: 1_024, height: 768)
++
++        coordinator.queue(only)
++        coordinator.didSend(only, at: start)
++
++        #expect(coordinator.nextToSend(now: afterWindow) == nil)
++        #expect(coordinator.inFlight == only)
++    }
++
+     @Test func reconnectRequeuesInFlightRequestUnlessNewerRequestExists() {
+         var firstCoordinator = DisplayConfigurationCoordinator()
+         let first = SpiceDisplayConfiguration(width: 800, height: 600)
+         firstCoordinator.queue(first)
+-        firstCoordinator.didSend(first)
++        firstCoordinator.didSend(first, at: start)
+         firstCoordinator.disconnected()
+-        #expect(firstCoordinator.nextToSend == first)
++        #expect(firstCoordinator.nextToSend(now: start) == first)
+ 
+         var latestCoordinator = DisplayConfigurationCoordinator()
+         let latest = SpiceDisplayConfiguration(width: 1_920, height: 1_080)
+         latestCoordinator.queue(first)
+-        latestCoordinator.didSend(first)
++        latestCoordinator.didSend(first, at: start)
+         latestCoordinator.queue(latest)
+         latestCoordinator.disconnected()
+-        #expect(latestCoordinator.nextToSend == latest)
++        #expect(latestCoordinator.nextToSend(now: start) == latest)
+     }
+ 
+     @Test func publicManagerRejectsInvalidOrUnstartedRequests() async {

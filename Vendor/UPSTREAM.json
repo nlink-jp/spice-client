@@ -2,7 +2,18 @@
   "url": "https://github.com/BeriBeli/spice-swift.git",
   "tag": "v0.4.2",
   "commit": "3f8de33a3c91fd7ed42d42b5970e644a8abf94b6",
-  "patch": "clipboard-boundary.patch",
+  "patches": [
+    {
+      "file": "clipboard-boundary.patch",
+      "sha256": "aecda582523ea20965c6eb533e758a2d9aeb5c83c4b56dd2afb78b54f9844433",
+      "decision": "ADR-0001"
+    },
+    {
+      "file": "display-configuration-liveness.patch",
+      "sha256": "3bcec4f548a4b1dd669f77f693743246bd0d37b0f90a1b6afeaf38fd9871df23",
+      "decision": "ADR-0004"
+    }
+  ],
   "native_sha256": {
     "Artifacts/CSpiceQUIC.xcframework/Info.plist": "d228f0ddad435d3049f25b3780230482c0ef3993d81494f25a722d73ec723a65",
     "Artifacts/CSpiceQUIC.xcframework/Licenses/spice-common-COPYING": "592987e8510228d546540b84a22444bde98e48d03078d3b2eefcd889bec5ce8c",
@@ -33,11 +44,12 @@
     "Artifacts/CUSBRedir.xcframework/macos-arm64/CUSBRedir.framework/Versions/A/Resources/Info.plist": "90b1b57f512659fbb638ef04318b2cd28f0fb4fa77546b92b529759a6c6a7ed2",
     "Artifacts/NATIVE_DEPENDENCIES.md": "8652e2cf96aa9329df28f9603cd9b119db094cc2d2aecdc1a25741d5895d82ec"
   },
-  "patch_sha256": "aecda582523ea20965c6eb533e758a2d9aeb5c83c4b56dd2afb78b54f9844433",
   "modified_files": [
     "Sources/SwiftSpice/SpiceClipboardManager.swift",
-    "Tests/SwiftSpiceTests/SpiceSessionTests.swift",
-    "Sources/SwiftSpice/SpicePasteboardAccess.swift"
+    "Sources/SwiftSpice/SpiceDisplayConfiguration.swift",
+    "Sources/SwiftSpice/SpicePasteboardAccess.swift",
+    "Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift",
+    "Tests/SwiftSpiceTests/SpiceSessionTests.swift"
   ],
   "files_sha256": {
     ".codex/environments/environment.toml": "24c7c37cc589f1fd50f2174a4e62a1d7e7cc495fd2c3033d470da5b753e20eee",
@@ -300,10 +312,10 @@
     "Sources/SwiftSpice/SpiceAgentEventMailbox.swift": "464e12a9f7d1446dae7a94efb79cc5b80d0f00b195cf04a5593498952b1fd478",
     "Sources/SwiftSpice/SpiceAudioCaptureSource.swift": "77d8d147a157b0b47a92485aa51fc403a47f0ecfb56ed28dc94d874a4a60b9cf",
     "Sources/SwiftSpice/SpiceAudioPlaybackSink.swift": "ed16b15dd17644616eae593461d7a2db8a867846da994e86d9ea39dd9cc763da",
-    "Sources/SwiftSpice/SpiceClipboardManager.swift": "e7422d38292910abe7d7af036c1fa1c95a9134547b6c23f31566c500ded0838d",
+    "Sources/SwiftSpice/SpiceClipboardManager.swift": "c48399a92713371309fd81e20de85cd0dfa02bd001539bca750bec8ca7a14b18",
     "Sources/SwiftSpice/SpiceDesktopSource.swift": "37cab76b1e8eb04aae2199ac992dae75fa24a05b42a7e7fecfd0a22651d3c977",
     "Sources/SwiftSpice/SpiceDesktopView.swift": "e6683f395585f3d38554eafca91e781ba22df60c378da336857c99f29ffa8c11",
-    "Sources/SwiftSpice/SpiceDisplayConfiguration.swift": "260562caadcc0b1b660c7382084efef49f691600967c00f2b451ab5462707802",
+    "Sources/SwiftSpice/SpiceDisplayConfiguration.swift": "1411273b027c988790029175e8950758eeed3b5828372edf22b8f9fc026ee52c",
     "Sources/SwiftSpice/SpiceFileTransfer.swift": "4b7f92013732a6bc6760e971f6247f77bd1ce4a3b002db358b7efee656ff18d9",
     "Sources/SwiftSpice/SpiceFilesystemTaskExecutor.swift": "3b5b4b7eb43efe2b52840d75e21d528d299893ef36eb3d74e1587061e48916d4",
     "Sources/SwiftSpice/SpiceInputExercisePlan.swift": "09b6c87d565435365482b0530bb94e17278705d9562228eccd48c9ca1a626362",
@@ -419,7 +431,7 @@
     "Tests/SpiceWireTests/WireMutationTests.swift": "54870ce0619e8493b25ef19f61c84ab8aa437a1887cf0b8c0cba51a2ec38ab5b",
     "Tests/SwiftSpiceTests/AudioCaptureProcessorTests.swift": "3e018ed48672d21d70b3cf1eeb84a09fb24a7852adbe0bbe41319ad3a1d06cac",
     "Tests/SwiftSpiceTests/ClipboardStateMachineTests.swift": "62952b8e3b97c8e756462a3b6cf1f35ed9a3163c1c638844f83d2aba4be341fb",
-    "Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift": "29f9fae9d5c0391213294798b59cea30ab4e1d374e3d1da340838160248314b5",
+    "Tests/SwiftSpiceTests/DisplayConfigurationCoordinatorTests.swift": "8e800da4b376c15e94fdcc77264c8c4157df9c2709839b216f91a9b458a7a2c1",
     "Tests/SwiftSpiceTests/FrameCoalescerTests.swift": "7cbe4cb7cc271fba84d2eee0e1940471933a081dc46d00ebf68a7964e058b710",
     "Tests/SwiftSpiceTests/MigrationHandoffCoordinatorTests.swift": "ffefdfc111ee46a94d421f2d442751f8f74fe4a37c918c8032f16b274097bff3",
     "Tests/SwiftSpiceTests/PlaybackBufferControllerTests.swift": "89089ebd221d9d9696980be05edce2cf80e22f9e44fd4c27f22d79c702a1a53e",

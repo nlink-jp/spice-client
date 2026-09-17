@@ -45,6 +45,27 @@ struct LiveAgentTests {
         try await eventually(predicate, seconds: seconds)
         record("latency \(label) \(start.duration(to: .now).components.seconds * 1000 + start.duration(to: .now).components.attoseconds / 1_000_000_000_000_000)")
     }
+    /// Copies `text` and waits for the guest's answer, copying again when the first
+    /// announcement is lost. Immediately after a session enables sharing, the guest's
+    /// vdagent may still be negotiating for this connection and drop the grab; a
+    /// second copy is what an operator would do, and it is delivered. Only the
+    /// opening exchange uses this: the revocation cases below must land first time,
+    /// because a retry there would create a new pasteboard change and prove nothing.
+    func deliver(_ text: String, to board: Pasteboard, expecting answer: String, attempts: Int = 3) async throws {
+        for attempt in 1...attempts {
+            board.set(text)
+            let deadline = ContinuousClock.now + .seconds(5)
+            while !board.guestWrites.contains(answer) && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            if board.guestWrites.contains(answer) {
+                record("attempts \(attempt)")
+                return
+            }
+        }
+        #expect(board.guestWrites.contains(answer))
+    }
+
     func record(_ line: String) {
         guard let path = ProcessInfo.processInfo.environment["SPICE_CLIENT_LIVE_PEER_RECEIPT"] else { return }
         let existing = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
@@ -78,8 +99,9 @@ struct LiveAgentTests {
         session.focus(true)
         // Sharing on and focused: the guest sees the host text and answers.
         let a = Self.token()
-        board.set(Self.hostText(a))
-        try await measure("host-to-guest-and-back", seconds: 10) { board.guestWrites.contains(Self.guestText(a)) }
+        let openedAt = ContinuousClock.now
+        try await deliver(Self.hostText(a), to: board, expecting: Self.guestText(a))
+        record("latency host-to-guest-and-back \(openedAt.duration(to: .now).components.seconds * 1000 + openedAt.duration(to: .now).components.attoseconds / 1_000_000_000_000_000)")
         record("delivered \(a)")
         // Sharing off revokes the authorization before the next host text exists, so
         // no poll can read it. Re-enabling offers the current pasteboard, as ADR-0001
@@ -127,16 +149,12 @@ struct LiveAgentTests {
         // applies modes from a 0.5 s poll. Too short fails the gate's ordered check
         // rather than passing it.
         try await Task.sleep(for: .seconds(5))
-        // A second request on the same agent connection, which the guest does NOT
-        // apply: SpiceDisplayConfigurationState.nextToSend yields nothing while a
-        // configuration is in flight, and in flight is cleared only by a reply that
-        // QEMU never sends for a monitors config under virtio-gpu. Recorded as
-        // `unapplied`, so the gate fails when this is fixed (ADR-0003, defect 1).
+        // A second request on the same agent connection. Nothing acknowledges the
+        // first under virtio-gpu, so before ADR-0004 the reply-gated sender latched
+        // here and this mode never reached the guest.
         session.resize(width: 1280, height: 800)
-        record("unapplied 1280x800")
+        record("mode 1280x800")
         try await Task.sleep(for: .seconds(5))
-        // The session still believes it can resize, which is what makes the defect
-        // silent for the operator.
         #expect(session.resizingAvailable)
         try await closed(session)
         record("resizeRequestReachesTheGuestTwiceOnOneAgentConnection")

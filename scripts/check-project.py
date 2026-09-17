@@ -13,7 +13,10 @@ def require(condition, message):
 
 root = Path(__file__).resolve().parent.parent
 upstream = json.loads((root / 'Vendor/UPSTREAM.json').read_text())
-require(hashlib.sha256((root/'Vendor'/upstream['patch']).read_bytes()).hexdigest() == upstream['patch_sha256'], 'Vendor patch changed')
+# Local changes are an ordered list: each applies to the tree the previous ones made.
+for entry in upstream['patches']:
+    path = root / 'Vendor' / entry['file']
+    require(hashlib.sha256(path.read_bytes()).hexdigest() == entry['sha256'], f"Vendor patch changed: {entry['file']}")
 vendor = root / 'Vendor/SwiftSpice'
 for name, expected in upstream['files_sha256'].items():
     path = vendor / name
