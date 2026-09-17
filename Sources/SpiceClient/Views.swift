@@ -110,6 +110,10 @@ struct SessionView: View {
                 }
             }.padding(10)
             if controller.audioUnavailable { Text(L.text("audioUnavailable")).foregroundStyle(.orange) }
+            if let refusal = controller.transferRefusal {
+                Text(L.text("refuse-" + refusal.rawValue)).foregroundStyle(.orange).textSelection(.enabled)
+            }
+            FileTransfersView(controller: controller)
             if controller.agentUnavailable { Text(L.text("agentUnavailable")).foregroundStyle(.orange) }
             if let desktop = controller.desktop, controller.lifecycle.phase != .closed {
                 SpiceDesktopView(desktop: desktop, onInput: controller.submit)
@@ -129,5 +133,43 @@ struct SessionView: View {
                 }.padding().frame(height: 220)
             }
         }.frame(minWidth: 640, minHeight: 400)
+        // A drop on a session window is a transfer to its guest; the launcher's drop
+        // is a connection. The window says which the operator meant (ADR-0005 §1).
+        .dropDestination(for: URL.self) { urls, _ in
+            controller.send(urls)
+            return true
+        }
+    }
+}
+
+/// One row per drop, with the failures named underneath: forty rows over a video
+/// surface is not a report anyone reads (ADR-0005 §3).
+struct FileTransfersView: View {
+    @Bindable var controller: SessionController
+    var body: some View {
+        let groups = controller.transfers.filter { !$0.isFinished || !$0.failures.isEmpty }
+        if !groups.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(groups) { group in
+                    HStack {
+                        Text("\(group.completed)/\(group.items.count)  \(L.text("transfers"))")
+                            .font(.caption).monospacedDigit()
+                        if group.totalBytes > 0 {
+                            ProgressView(value: Double(group.sentBytes), total: Double(group.totalBytes))
+                                .frame(maxWidth: 160)
+                        }
+                        Spacer()
+                        if !group.isFinished {
+                            Button(L.text("cancel")) { controller.cancelTransfers(group: group.id) }.font(.caption)
+                        }
+                    }
+                    ForEach(group.failures) { failure in
+                        Text(failure.name + ": " + failure.reason)
+                            .font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                    }
+                }
+                Text(L.text("transferIrreversible")).font(.caption).foregroundStyle(.secondary)
+            }.padding(.horizontal, 10).padding(.bottom, 6)
+        }
     }
 }

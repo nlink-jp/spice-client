@@ -53,6 +53,15 @@ enum L {
         "audioUnavailable": ("Audio playback is unavailable.", "音声再生を利用できません。"),
         "agentUnavailable": ("Guest integration is unavailable.", "ゲスト連携を利用できません。"),
         "noUpdates": ("Automatic updates are not included in this version.", "このバージョンには自動更新機能はありません。"),
+        "sendFiles": ("Send Files…", "ファイルを送信…"),
+        "transfers": ("files sent to this guest", "件をこのゲストへ送信"),
+        "transferIrreversible": ("Cancelling stops sending; it does not remove what the guest already received.", "キャンセルは送信を止めるだけで、ゲストが既に受け取った分は取り消せません。"),
+        "refuse-empty": ("No files were dropped.", "ファイルがドロップされていません。"),
+        "refuse-connectionFile": ("Connection files are not sent to a guest. Open a .vv file from the launcher instead.", "接続ファイルはゲストへ送りません。.vv ファイルはランチャーから開いてください。"),
+        "refuse-notConnected": ("Files can be sent only while the session is connected.", "ファイルを送れるのは、セッションが接続されている間だけです。"),
+        "refuse-agentUnavailable": ("The guest integration is unavailable, so files cannot be sent.", "ゲスト連携を利用できないため、ファイルを送れません。"),
+        "refuse-guestRefuses": ("This guest does not accept files.", "このゲストはファイルを受け取りません。"),
+        "refuse-noRegularFiles": ("Only regular files can be sent. Folders are not.", "送れるのは通常のファイルだけです。フォルダは送れません。"),
     ]
     static func text(_ key: String, languages: [String] = Locale.preferredLanguages) -> String {
         guard let pair = strings[key] else { return key }

@@ -129,6 +129,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let window = NSApp.keyWindow { releaseCapture(window); sessions[window]?.releaseInput() }
     }
     @objc func disconnect() { if let window = NSApp.keyWindow { sessions[window]?.disconnect() } }
+    /// The pointer is captured and hidden while a session has focus, so dragging onto
+    /// the window is not always possible; this is the other way in (ADR-0005 §1).
+    @objc func sendFiles() {
+        guard let window = NSApp.keyWindow, let controller = sessions[window] else { return }
+        let urls = TransferFilePicker().choose()
+        guard !urls.isEmpty else { return }
+        controller.send(urls)
+    }
     private func showSession(_ controller: SessionController) {
         let window = makeWindow(controller.plan.title ?? "Spice Client", content: SessionView(controller: controller), size: .init(width: 1024, height: 720))
         sessions[window] = controller
@@ -197,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let session = submenu(L.text("menuSession"))
         add(session, L.text("cad"), #selector(secureAttention), "", target)
+        add(session, L.text("sendFiles"), #selector(sendFiles), "", target)
         add(session, L.text("release"), #selector(releaseInput), "", target)
         add(session, L.text("disconnect"), #selector(disconnect), "", target)
         add(session, L.text("fullscreen"), #selector(NSWindow.toggleFullScreen(_:)))

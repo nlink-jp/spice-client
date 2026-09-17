@@ -69,3 +69,30 @@ import SwiftSpice
     #expect(access.snapshot(before.generation) == nil)
     #expect(access.snapshot(access.authorization().generation)?.text == "local")
 }
+
+// ADR-0005: the rule a drop on a session window goes through. The drop handler,
+// the menu command and the live gate all call this, so the surface cannot drift
+// from what is tested here.
+@Test func fileDropRefusesWhatASessionCannotOrMustNotSend() {
+    let file = URL(fileURLWithPath: "/tmp/report.pdf")
+    let ticket = URL(fileURLWithPath: "/tmp/console.vv")
+    let folder = URL(fileURLWithPath: "/tmp/folder")
+    func decide(_ urls: [URL], phase: SessionLifecycle.Phase = .connected,
+                agent: Bool = true, guest: Bool = true) -> FileDropDecision {
+        FileDropPolicy.decide(urls: urls, phase: phase, agentAvailable: agent, guestAcceptsFiles: guest,
+                              isRegularFile: { $0 != folder })
+    }
+    #expect(decide([file]) == .send([file]))
+    #expect(decide([]) == .refused(.empty))
+    // A connection file carries a ticket: refused whatever else is in the drop.
+    #expect(decide([ticket]) == .refused(.connectionFile))
+    #expect(decide([file, ticket]) == .refused(.connectionFile))
+    #expect(decide([ticket], phase: .idle, agent: false, guest: false) == .refused(.connectionFile))
+    #expect(decide([file], phase: .connecting) == .refused(.notConnected))
+    #expect(decide([file], phase: .closed) == .refused(.notConnected))
+    #expect(decide([file], agent: false) == .refused(.agentUnavailable))
+    #expect(decide([file], guest: false) == .refused(.guestRefuses))
+    #expect(decide([folder]) == .refused(.noRegularFiles))
+    // A mixed drop sends the regular files and never the folder.
+    #expect(decide([file, folder]) == .send([file]))
+}
