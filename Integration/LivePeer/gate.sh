@@ -42,9 +42,16 @@ finish() {
     fi
     # SPICE_CLIENT_LIVE_PEER_KEEP_LOG=<path> keeps the whole guest log, pass or
     # fail; the failure tail above is 60 lines, which can cut a sequence in half.
+    # Only read back a peer that is still there: phase 1 removes its own on the
+    # way to phase 2 and kept its log at that point, and overwriting it here
+    # would replace the log with podman's "no such container".
     if [ -n "${SPICE_CLIENT_LIVE_PEER_KEEP_LOG:-}" ]; then
-        podman logs "$MAIN_NAME" 2>&1 | tr -d '\r' > "$SPICE_CLIENT_LIVE_PEER_KEEP_LOG" || true
-        podman logs "$AUDIO_NAME" 2>&1 | tr -d '\r' > "$SPICE_CLIENT_LIVE_PEER_KEEP_LOG.audio" || true
+        if podman container exists "$MAIN_NAME"; then
+            podman logs "$MAIN_NAME" 2>&1 | tr -d '\r' > "$SPICE_CLIENT_LIVE_PEER_KEEP_LOG" || true
+        fi
+        if podman container exists "$AUDIO_NAME"; then
+            podman logs "$AUDIO_NAME" 2>&1 | tr -d '\r' > "$SPICE_CLIENT_LIVE_PEER_KEEP_LOG.audio" || true
+        fi
         cp "$RECEIPT" "$SPICE_CLIENT_LIVE_PEER_KEEP_LOG.receipt" 2>/dev/null || true
     fi
     if [ -s "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi
@@ -76,6 +83,9 @@ if [ -n "${SPICE_CLIENT_LIVE_PEER_AGENT:-}" ]; then
 fi
 # The serial console ends lines with CRLF; anchored matches need the CR gone.
 podman logs "$MAIN_NAME" 2>&1 | tr -d '\r' > "$GUEST_LOG"
+# Phase 1's peer is removed below, so a pass leaves finish() nothing to read
+# back from podman; keep this copy now or the kept log is only ever the failure.
+if [ -n "${SPICE_CLIENT_LIVE_PEER_KEEP_LOG:-}" ]; then cp "$GUEST_LOG" "$SPICE_CLIENT_LIVE_PEER_KEEP_LOG"; fi
 live_peer_guest_saw_key "$GUEST_LOG" || { echo "live-peer: the guest did not record the injected A key (evdev code 30 down)" >&2; exit 1; }
 live_peer_agent_log_matches "$RECEIPT" "$GUEST_LOG"
 SPICE_CLIENT_LIVE_PEER_CONTAINER="$MAIN_NAME" bash "$HERE/stop.sh"
@@ -92,8 +102,9 @@ live_peer_guest_audio_started "$GUEST_LOG" || { echo "live-peer: the audio guest
 live_peer_tests_ran "$RECEIPT" connectsPresentsRealFramesDeliversInputAndReconnects wrongTicketFailsAuthenticationAndThePeerSurvives \
         connectsOverTLSWithTheFileCertificateAuthority connectsOverTLSWhenTheHostSubjectMatches rejectsADecoyAuthorityAndAWrongSubjectAndThePeerSurvives \
         clipboardFollowsSharingAndFocusInBothDirections resizeRequestReachesTheGuestTwiceOnOneAgentConnection \
+        sendsAFileTheGuestReceivesIntact \
         receivesAudioPlaybackFromTheGuest \
-    || { echo "live-peer: not all eight tests ran (transport, TLS, agent, audio); a suite skips silently without its environment, the agent suite needs the guest agent stack, and the audio suite needs phase 2" >&2; exit 1; }
+    || { echo "live-peer: not all nine tests ran (transport, TLS, agent, audio); a suite skips silently without its environment, the agent suite needs the guest agent stack, and the audio suite needs phase 2" >&2; exit 1; }
 echo "live-peer: observed latencies (ms): $(grep '^latency ' "$RECEIPT" | cut -d' ' -f2- | tr '\n' ';')"
 HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
 if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then DIRTY=true; else DIRTY=false; fi

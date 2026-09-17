@@ -98,7 +98,8 @@ if test -e /dev/virtio-ports/com.redhat.spice.0; then
     done
 fi
 if test -S /tmp/.X11-unix/X0; then
-    dbus-run-session -- sh -c 'exec spice-vdagent --foreground' &
+    mkdir -p /tmp/incoming
+    dbus-run-session -- sh -c 'exec spice-vdagent --foreground --file-xfer-save-dir=/tmp/incoming' &
     echo "AGENT_STACK_STARTED"
     # Clipboard observer: log every change; answer a host token with a guest token.
     (
@@ -123,6 +124,51 @@ if test -S /tmp/.X11-unix/X0; then
             sleep 0.5
         done
     ) &
+    # File observer: vdagent writes a transfer as its chunks arrive, so a poller
+    # that hashes on sight hashes a partial file. Report once the size has been
+    # stable, and always report by the deadline so a stuck transfer produces a
+    # line rather than silence.
+    (
+        while true; do
+            for file in /tmp/incoming/*; do
+                test -f "$file" || continue
+                name="$(basename "$file")"
+                test -e "/tmp/reported-$name" && continue
+                touch "/tmp/reported-$name"
+                (
+                    # vdagent allocates the full size up front, so the size is
+                    # settled from the first instant and says nothing. The
+                    # modification time moves with every chunk, so that is the
+                    # signal; the deadline always produces a line.
+                    previous=""
+                    stable=0
+                    waited=0
+                    while test "$waited" -lt 60; do
+                        current="$(stat -c %Y "$file" 2>/dev/null)"
+                        test -n "$current" || break
+                        if test "$current" = "$previous"; then
+                            stable=$((stable + 1))
+                        else
+                            stable=0
+                        fi
+                        test "$stable" -ge 2 && break
+                        previous="$current"
+                        waited=$((waited + 1))
+                        sleep 1
+                    done
+                    if test -f "$file"; then
+                        test "$waited" -ge 60 && echo "FILE_TRANSFER_DEADLINE name=$name"
+                        echo "FILE_TRANSFER_RECEIVED name=$name bytes=$(wc -c < "$file" | tr -d ' ') sha256=$(sha256sum "$file" | cut -d' ' -f1)"
+                    else
+                        # The agent removed it: a failed transfer, not a delivery.
+                        echo "FILE_TRANSFER_REMOVED name=$name"
+                    fi
+                ) &
+            done
+            sleep 1
+        done
+    ) &
+
     # Mode observer: apply the preferred mode of Virtual-1 whenever it changes.
     (
         last=""

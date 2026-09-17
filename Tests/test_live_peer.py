@@ -113,6 +113,27 @@ class GateChecks(unittest.TestCase):
             log.write_text(f'CLIPBOARD_OBSERVED bytes=31 sha256={sha("cc")}\nCLIPBOARD_OBSERVED bytes=31 sha256={sha("aa")}\nXRANDR_MODE 1024x768\nXRANDR_MODE 1280x800\n')
             self.assertNotEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
 
+    def test_file_receipt_requires_the_guest_to_report_the_same_digest(self):
+        with tempfile.TemporaryDirectory() as work:
+            receipt, log = Path(work) / 'receipt', Path(work) / 'guest.log'
+            receipt.write_text('file report.bin abc123\n')
+            log.write_text('FILE_TRANSFER_RECEIVED name=report.bin bytes=10 sha256=abc123\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+            # A different digest for the same name is a corrupted transfer, not a pass.
+            log.write_text('FILE_TRANSFER_RECEIVED name=report.bin bytes=10 sha256=deadbeef\n')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+            # The name must match too, not just the digest.
+            log.write_text('FILE_TRANSFER_RECEIVED name=other.bin bytes=10 sha256=abc123\n')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+            log.write_text('')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+            # The guest reports a file once its writes settle, which is out of order
+            # with the markers around it; position must not matter.
+            receipt.write_text('mode 1024x768\nfile report.bin abc123\nmode 1280x800\n')
+            log.write_text('FILE_TRANSFER_RECEIVED name=report.bin bytes=10 sha256=abc123\n'
+                           'XRANDR_MODE 1024x768\nXRANDR_MODE 1280x800\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_agent_log_matches "{receipt}" "{log}"').returncode, 0)
+
     def test_pinned_unapplied_mode_fails_when_the_mode_does_arrive(self):
         import hashlib
         with tempfile.TemporaryDirectory() as work:
@@ -138,6 +159,37 @@ class GateChecks(unittest.TestCase):
             self.assertEqual(run(f'. ./lib.sh; live_peer_guest_current "{work}" guest').returncode, 0)
             record.write_text(json.dumps({'init_sha256': 'stale', 'build_sha256': build_sha}))
             self.assertNotEqual(run(f'. ./lib.sh; live_peer_guest_current "{work}" guest').returncode, 0)
+
+    def test_peer_start_retries_a_lost_port_race_but_not_a_real_failure(self):
+        # podman binds the ephemeral loopback port it was given a moment after
+        # asking for it, so another process can take it in between; every other
+        # failure must surface immediately rather than be retried away.
+        with tempfile.TemporaryDirectory() as work:
+            counter = Path(work) / 'attempts'
+            counter.write_text('')
+            starter = (f'start() {{ printf x >> "{counter}"; '
+                       f'if [ "$(wc -c < "{counter}")" -le %d ]; then '
+                       'echo "Error: listen tcp 127.0.0.1:41343: bind: address already in use" >&2; '
+                       'return 126; fi; }; ')
+            env = {'SPICE_CLIENT_LIVE_PEER_RETRY_DELAY': '0'}
+
+            result = run('. ./lib.sh; ' + starter % 2 + 'live_peer_start_with_retry 5 start', env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(counter.read_text(), 'xxx')
+            self.assertIn('retrying (2 of 5)', result.stderr)
+
+            counter.write_text('')
+            result = run('. ./lib.sh; ' + starter % 99 + 'live_peer_start_with_retry 3 start', env)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(counter.read_text(), 'xxx')
+            self.assertIn('no free loopback port after 3 attempts', result.stderr)
+
+            counter.write_text('')
+            result = run('. ./lib.sh; start() { printf x >> "%s"; echo "Error: no such image" >&2; return 125; }; '
+                         'live_peer_start_with_retry 5 start' % counter, env)
+            self.assertEqual(result.returncode, 125)
+            self.assertEqual(counter.read_text(), 'x')
+            self.assertIn('no such image', result.stderr)
 
     def test_scripts_and_guest_init_parse(self):
         for script in sorted(LIVE.glob('*.sh')):

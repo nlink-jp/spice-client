@@ -27,8 +27,6 @@ printf '%s' "$TICKET" > "$TICKET_FILE"
 # Per-run TLS material (phase 1b): QEMU reads ca-cert/server-cert/server-key from x509-dir.
 X509_DIR="$(mktemp -d "$TICKET_DIR/x509.XXXXXX")"
 live_peer_make_x509 "$X509_DIR" || { echo "run: could not generate the TLS certificates" >&2; exit 1; }
-# A stale container of the same name is an interrupted earlier run.
-podman rm -f "$NAME" > /dev/null 2>&1 || true
 # Audio is opt-in per run. The playback channel makes QEMU's spice server crash
 # under repeated client connect/disconnect (measured: 3 crashes in 12 runs with it,
 # 0 in 18 without, on 8.2.2 and worse on 10.0.13), so the churn-heavy suites run
@@ -47,6 +45,10 @@ fi
 # No --rm: a peer that dies mid-run must keep its exit status and log for the
 # gate to report. stop.sh removes the container; its lifetime is bounded by the
 # QEMU timeout below and by the stale-name removal at the next start.
+start_peer() {
+# A container of this name is an interrupted earlier run, or the carcass of an
+# attempt that lost the race for its port.
+podman rm -f "$NAME" > /dev/null 2>&1 || true
 podman run --detach --name "$NAME" \
     --cpus "${SPICE_CLIENT_LIVE_PEER_CPUS:-4}" --memory 3g \
     --publish "127.0.0.1::5930" --publish "127.0.0.1::5931" \
@@ -67,6 +69,9 @@ podman run --detach --name "$NAME" \
         -object secret,id=spice-password,file=/run/spice-ticket \
         -spice port=5930,tls-port=5931,addr=0.0.0.0,x509-dir=/run/x509,password-secret=spice-password \
         -display none -serial stdio -monitor none -no-reboot > /dev/null
+}
+
+live_peer_start_with_retry "${SPICE_CLIENT_LIVE_PEER_START_ATTEMPTS:-5}" start_peer
 PORT="$(podman port "$NAME" 5930/tcp | sed -n 's/^127\.0\.0\.1:\([0-9][0-9]*\)$/\1/p' | head -n 1)"
 test -n "$PORT" || { echo "run: podman did not publish 5930/tcp on 127.0.0.1" >&2; exit 1; }
 TLS_PORT="$(podman port "$NAME" 5931/tcp | sed -n 's/^127\.0\.0\.1:\([0-9][0-9]*\)$/\1/p' | head -n 1)"

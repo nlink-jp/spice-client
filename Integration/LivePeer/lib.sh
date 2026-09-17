@@ -32,6 +32,43 @@ sys.exit(0 if ok else 1)
 PY
 }
 
+# $1 = attempt limit, $2... = the command that starts a peer. podman asks the
+# kernel for a free ephemeral loopback port and binds it a moment later, and
+# nothing reserves it in between, so another process — often the previous
+# phase's peer releasing its own ports — can take it first (seen once in three
+# consecutive gate runs, in phase 2 right after phase 1 stopped). No podman
+# option holds a port, so a bounded retry with a fresh allocation is the fix
+# rather than a workaround. Every other failure passes straight through with its
+# status and message, because retrying a real failure only hides it.
+live_peer_start_with_retry() {
+    local attempts="$1" attempt=1 error status
+    shift
+    while true; do
+        # $? must be read inside the else: after a whole `if` with no taken
+        # branch it is the `if` statement's own status, which is always 0.
+        if error="$("$@" 2>&1)"; then
+            return 0
+        else
+            status=$?
+        fi
+        case "$error" in
+            *"address already in use"*)
+                if [ "$attempt" -ge "$attempts" ]; then
+                    echo "live-peer: no free loopback port after $attempts attempts: $error" >&2
+                    return 1
+                fi
+                echo "live-peer: loopback port taken between allocation and bind; retrying ($attempt of $attempts)" >&2
+                attempt=$((attempt + 1))
+                sleep "${SPICE_CLIENT_LIVE_PEER_RETRY_DELAY:-1}"
+                ;;
+            *)
+                echo "$error" >&2
+                return "$status"
+                ;;
+        esac
+    done
+}
+
 # $1 = image, $2 = Containerfile, $3 = output json. Records what the image
 # actually contains: apt versions float, so they are recorded, not pinned.
 live_peer_describe_image() {
@@ -131,6 +168,18 @@ def find(predicate, start):
 cursor = 0
 for line in receipt:
     parts = line.split()
+    if len(parts) == 3 and parts[0] == "file":
+        # file <name> <sha256>: the guest must hold those exact bytes. Searched over
+        # the whole log and the cursor is left alone: the name carries a per-run
+        # UUID, so there is nothing to disambiguate by position, and the guest
+        # reports a file only once its writes have settled, which is seconds after
+        # the host saw the transfer complete and therefore out of order with the
+        # markers around it.
+        _, name, digest = parts
+        if not any(l.startswith("FILE_TRANSFER_RECEIVED ") and f"name={name} " in l
+                   and l.endswith("sha256=" + digest) for l in log):
+            sys.exit(f"live-peer: the guest did not report {name} with sha256 {digest}")
+        continue
     if len(parts) != 2:
         continue
     kind, token = parts

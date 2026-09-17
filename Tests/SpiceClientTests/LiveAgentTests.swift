@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 import ConnectionCore
@@ -66,6 +67,9 @@ struct LiveAgentTests {
         #expect(board.guestWrites.contains(answer))
     }
 
+    static func counter(_ name: String, in summary: String) -> Int? {
+        summary.split(separator: "\n").first { $0.hasPrefix(name + "=") }.flatMap { Int($0.dropFirst(name.count + 1)) }
+    }
     func record(_ line: String) {
         guard let path = ProcessInfo.processInfo.environment["SPICE_CLIENT_LIVE_PEER_RECEIPT"] else { return }
         let existing = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
@@ -133,6 +137,43 @@ struct LiveAgentTests {
         // R7: the guest holds the X selection with its last answer; closing must not wait on it.
         try await closed(session)
         record("clipboardFollowsSharingAndFocusInBothDirections")
+    }
+
+    /// A file the operator dropped reaches the guest intact: the test records the
+    /// name and digest, and the gate requires the guest to report the same bytes.
+    @Test func sendsAFileTheGuestReceivesIntact() async throws {
+        let board = Pasteboard()
+        let session = try await connectWithAgent(board)
+        session.setDiagnostics(true)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let name = "spice-client-" + UUID().uuidString.prefix(8) + ".bin"
+        let url = directory.appendingPathComponent(name)
+        // Several chunks worth, so progress is a sequence rather than one event.
+        let bytes = Data((0..<64_000).map { UInt8($0 % 251) })
+        try bytes.write(to: url)
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+
+        session.send([url])
+        #expect(session.transferRefusal == nil)
+        try await eventually({ session.transfers.first?.completed == 1 }, seconds: 60)
+        #expect(session.transfers.first?.failures.isEmpty == true)
+        try await eventually({ (Self.counter("files_sent", in: session.summary) ?? 0) >= 1 }, seconds: 10)
+        #expect((Self.counter("bytes_sent", in: session.summary) ?? 0) == 64_000)
+        // The summary carries counts, never the name or the path (ADR-0001 §6).
+        #expect(!session.summary.contains(name))
+        #expect(!session.summary.contains(directory.path))
+
+        // A connection file is refused on a session window whatever its state.
+        let ticket = directory.appendingPathComponent("console.vv")
+        try Data("[virt-viewer]\n".utf8).write(to: ticket)
+        session.send([ticket])
+        #expect(session.transferRefusal == .connectionFile)
+
+        record("file " + name + " " + digest)
+        try await closed(session)
+        record("sendsAFileTheGuestReceivesIntact")
     }
 
     @Test func resizeRequestReachesTheGuestTwiceOnOneAgentConnection() async throws {
