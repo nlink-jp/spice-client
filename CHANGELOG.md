@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-09-18
 
 ### Added
 - Send files to a connected guest, by dropping them on the session window or through
@@ -27,21 +27,19 @@
   recorded for the release commit.
 
 ### Fixed
-- File transfer no longer stalls partway through a file. Three causes sat behind one
-  symptom: the clipboard patch returned early when access was denied and skipped the
-  drives at the end of the same method; the backend's transfer drive is not re-entrant,
-  so concurrent drives re-sent one offset for ever; and the 16,000-byte default chunk
-  does not fit the agent channel's token window, which QEMU opens ten tokens wide and
-  replenishes five at a time. The chunk is now 4,000 bytes and the drive is serialised
-  in a vendored patch (ADR-0005 §6).
-- The live peer gate no longer fails when podman loses the race for the loopback port
-  it was just allocated. The start is retried with a fresh allocation, up to five times;
-  any other failure still surfaces immediately.
 - A viewport resize after the first one on a session no longer goes missing. The
   backend sent a monitors configuration only when none was in flight and cleared that
   on a reply which QEMU does not send under virtio-gpu, so the first resize latched
   the sender for the life of the agent connection while the session still reported
   resizing as available. The vendored patch now bounds that wait (ADR-0004).
+- The vendored clipboard patch no longer returns early when clipboard access is denied.
+  That early return also skipped the display-configuration and file-transfer drives at
+  the end of the same method, which is the only periodic path while automatic pasteboard
+  synchronization is on (ADR-0005 §6).
+
+Verified against a real spice-server and a real spice-vdagent by `make live-peer`,
+which this release requires to have passed on the release commit. The Ravada portal
+stays on simulation and H.264 is still unverified. See `docs/en/verification.md`.
 
 ## [0.1.0] - 2026-09-18
 
