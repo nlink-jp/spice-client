@@ -87,6 +87,7 @@ podman logs "$MAIN_NAME" 2>&1 | tr -d '\r' > "$GUEST_LOG"
 # back from podman; keep this copy now or the kept log is only ever the failure.
 if [ -n "${SPICE_CLIENT_LIVE_PEER_KEEP_LOG:-}" ]; then cp "$GUEST_LOG" "$SPICE_CLIENT_LIVE_PEER_KEEP_LOG"; fi
 live_peer_guest_saw_key "$GUEST_LOG" || { echo "live-peer: the guest did not record the injected A key (evdev code 30 down)" >&2; exit 1; }
+if [ -n "${SPICE_CLIENT_LIVE_PEER_AGENT:-}" ]; then live_peer_guest_x_has_input "$GUEST_LOG" || exit 1; fi
 live_peer_agent_log_matches "$RECEIPT" "$GUEST_LOG"
 SPICE_CLIENT_LIVE_PEER_CONTAINER="$MAIN_NAME" bash "$HERE/stop.sh"
 

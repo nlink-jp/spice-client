@@ -6,8 +6,19 @@
 - `SPICE_CLIENT_LIVE_PEER_DEMO=1` starts a live peer whose guest paints its root and
   opens a terminal, so the session can be looked at by hand. The gate never sets it,
   and the guest its tests observe is unchanged.
+- The gate requires Xorg in the guest to have taken at least two input devices. The
+  key test reads evdev, one layer below X, so it passed for as long as the gate has
+  existed while X had none and no X client could see a keystroke.
 
 ### Fixed
+- The session window's control bar is visible again. The backend's presentation layer
+  was 1024x752 inside a 1024x676 view and its parent did not clip, so it painted over
+  the phase text, the clipboard toggle, and the Disconnect and Diagnostics buttons.
+  Nothing was hidden or transparent; the bar was covered. Only the Session menu could
+  reach those commands, and the clipboard toggle and diagnostics had no other way in.
+- The live-peer guest gives Xorg its input devices. It had no X input driver and no
+  running udevd, so keystrokes reached the guest kernel and stopped there, and a
+  terminal in the guest could not be typed into.
 - Both READMEs said the live-peer guest is about 18 MB. It has been about 111 MB since
   Xorg was added, nearly all of it the Mesa stack that `xorg-server` pulls in. The
   Japanese README also still described two vendored patches, where there are three.

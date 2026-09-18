@@ -168,7 +168,11 @@
         "gate_runs_with_a_matching_digest": 7,
         "gate_runs": 7,
         "note": "the one gate failure among those 7 was the podman loopback-port race in phase 2, after the file test had already passed and recorded its digest"
-      }
+      },
+      "found_by_hand_not_by_the_gate": [
+        "the guest's Xorg had no input driver and no udevd, so it started with zero input devices; the key test reads evdev, one layer below X, and passed throughout. The gate now requires Xorg to have taken at least two input devices",
+        "the application's session window painted its control bar over: the backend's presentation layer was 1024x752 inside a 1024x676 view whose parent did not clip"
+      ]
     }
   },
   "vendor_patches": [

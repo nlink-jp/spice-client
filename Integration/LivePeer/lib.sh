@@ -32,6 +32,19 @@ sys.exit(0 if ok else 1)
 PY
 }
 
+# $1 = guest log. Requires X to have taken the guest's input devices. The key
+# test observes evdev directly, which is one layer below X: it has always passed
+# while Xorg ran with zero input devices and no X client could see a keystroke
+# (measured 2026-09-18, found by looking at a terminal in the guest, not by the
+# gate). Xorg enumerates input only through udev, so this fails closed when the
+# guest's udevd or its input driver goes missing.
+live_peer_guest_x_has_input() {
+    local count
+    count="$(sed -n 's/^GUEST xorg input devices: \([0-9][0-9]*\)$/\1/p' "$1" | tail -n 1)"
+    test -n "$count" || { echo "live-peer: the guest never reported how many input devices Xorg took" >&2; return 1; }
+    test "$count" -ge 2 || { echo "live-peer: Xorg took $count input devices; the keyboard and mouse should both be there" >&2; return 1; }
+}
+
 # $1 = attempt limit, $2... = the command that starts a peer. podman asks the
 # kernel for a free ephemeral loopback port and binds it a moment later, and
 # nothing reserves it in between, so another process — often the previous

@@ -121,6 +121,9 @@ struct SessionView: View {
                         controller.resize(width: Int(size.width), height: Int(size.height))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The backend's presentation layer is not confined to the view
+                    // it belongs to; without this it paints over the control bar.
+                    .clipped()
             } else { ContentUnavailableView(phase, systemImage: "display").frame(maxWidth: .infinity, maxHeight: .infinity) }
             if showDiagnostics {
                 VStack(alignment: .leading, spacing: 8) {

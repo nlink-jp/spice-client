@@ -77,7 +77,10 @@ head: two made QEMU dump core on 8.2.2 and 10.0.13 alike.
 `SPICE_CLIENT_LIVE_PEER_KEEP_LOG=<path>` keeps the whole guest log for diagnosis.
 The gate's guest runs a bare X server: the only X clients are spice-vdagent,
 xclip and xrandr, and none of them paint, so a session window on it is black
-and that is correct. `SPICE_CLIENT_LIVE_PEER_DEMO=1` puts `spice_demo=1` on the
+and that is correct. Xorg finds input only through udev, so the guest runs
+udevd before Xorg and the gate requires it to have taken at least two input
+devices: the key test reads evdev, one layer below X, and passed for as long
+as the gate existed while X had none. `SPICE_CLIENT_LIVE_PEER_DEMO=1` puts `spice_demo=1` on the
 kernel command line, and the init then paints the root and opens an xterm. The
 gate never sets it, so what the tests observe is unchanged; the three extra
 packages cost 0.6 MB of a 111 MB initramfs, nearly all of which is the Mesa

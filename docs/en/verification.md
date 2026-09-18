@@ -192,8 +192,16 @@ loopback port it had just been allocated, once in three consecutive runs, in
 phase 2 immediately after phase 1 released its own. The suites now run
 sequentially, the peer has one display head, audio runs on its own peer with a
 single connection, which was clean in 5 of 5 runs, and a peer start that loses the
-port race is retried with a fresh allocation up to five times. Not covered: H.264,
-the Ravada portal, a desktop environment's own clipboard managers, and USB.
+port race is retried with a fresh allocation up to five times. Two defects the gate could not see were found by looking at a guest desktop by
+hand (2026-09-18). The guest's Xorg had no input driver and no running udevd, so
+it started with zero input devices: keys reached the guest kernel, which is all
+the gate's evdev reader ever checked, and no X client could be typed into. And
+the application's session window painted its control bar over: the backend's
+presentation layer was 1024x752 inside a 1024x676 view whose parent did not clip,
+so the phase text, the clipboard toggle and the Disconnect and Diagnostics
+buttons were covered. Both are fixed, and the gate now requires Xorg to have
+taken at least two input devices. Not covered: H.264, the Ravada portal, a
+desktop environment's own clipboard managers, and USB.
 
 ## Reproduce
 

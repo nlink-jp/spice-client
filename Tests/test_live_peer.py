@@ -191,6 +191,22 @@ class GateChecks(unittest.TestCase):
             self.assertEqual(counter.read_text(), 'x')
             self.assertIn('no such image', result.stderr)
 
+    def test_x_must_have_taken_the_guest_input_devices(self):
+        # The key test reads evdev, one layer below X. Xorg ran with zero input
+        # devices for as long as this gate existed and the key test never noticed.
+        with tempfile.TemporaryDirectory() as work:
+            log = Path(work) / 'guest.log'
+            log.write_text('GUEST xorg input devices: 2\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_guest_x_has_input "{log}"').returncode, 0)
+            log.write_text('GUEST xorg input devices: 1\n')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_guest_x_has_input "{log}"').returncode, 0)
+            log.write_text('GUEST xorg input devices: 0\n')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_guest_x_has_input "{log}"').returncode, 0)
+            log.write_text('AGENT_STACK_STARTED\n')
+            result = run(f'. ./lib.sh; live_peer_guest_x_has_input "{log}"')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('never reported', result.stderr)
+
     def test_scripts_and_guest_init_parse(self):
         for script in sorted(LIVE.glob('*.sh')):
             self.assertEqual(subprocess.run(['bash', '-n', str(script)]).returncode, 0, script.name)
