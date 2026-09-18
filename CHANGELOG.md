@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `SPICE_CLIENT_LIVE_PEER_DEMO=1` starts a live peer whose guest paints its root and
+  opens a terminal, so the session can be looked at by hand. The gate never sets it,
+  and the guest its tests observe is unchanged.
+
+### Fixed
+- Both READMEs said the live-peer guest is about 18 MB. It has been about 111 MB since
+  Xorg was added, nearly all of it the Mesa stack that `xorg-server` pulls in. The
+  Japanese README also still described two vendored patches, where there are three.
+
 ## [0.2.0] - 2026-09-18
 
 ### Added

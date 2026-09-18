@@ -19,7 +19,7 @@ SwiftSpice; a narrowly scoped clipboard API patch is explicitly part of the desi
 - `make simulate`: temporary HTTPS/WebKit/SPICE loopback fixtures; no real guest required.
 - `Integration/LivePeer`, `make live-peer`: real spice-server in QEMU (TCG) under Podman with an
   Alpine guest running Xorg and spice-vdagent (ADR-0002, ADR-0003); needs a running Podman
-  machine; `Artifacts/` (about 113 MB) is ignored by git and rebuilt when the guest sources change.
+  machine; `Artifacts/` (about 120 MB) is ignored by git and rebuilt when the guest sources change.
 - `make test-vendor`: sequential upstream suite; unbounded concurrency stalls filesystem fixtures.
 - `make verify-vendor`: replays `Vendor/*.patch` against the pinned upstream; needs the network.
 - `make package`, `make verify-release`: require valid Developer ID signing/notarization, and a
@@ -75,6 +75,13 @@ fails on the missing agent receipts. The SPICE server serves one client, so the 
 suites run as separate sequential `swift test` invocations. The peer has one display
 head: two made QEMU dump core on 8.2.2 and 10.0.13 alike.
 `SPICE_CLIENT_LIVE_PEER_KEEP_LOG=<path>` keeps the whole guest log for diagnosis.
+The gate's guest runs a bare X server: the only X clients are spice-vdagent,
+xclip and xrandr, and none of them paint, so a session window on it is black
+and that is correct. `SPICE_CLIENT_LIVE_PEER_DEMO=1` puts `spice_demo=1` on the
+kernel command line, and the init then paints the root and opens an xterm. The
+gate never sets it, so what the tests observe is unchanged; the three extra
+packages cost 0.6 MB of a 111 MB initramfs, nearly all of which is the Mesa
+stack xorg-server pulls in.
 podman binds the ephemeral loopback port it was allocated a moment after asking
 for it, and nothing reserves it in between, so a peer start can lose the race to
 whatever released a port just then, including the previous phase's own peer

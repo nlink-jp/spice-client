@@ -4,6 +4,10 @@
 # xrandr from the official CDN, the linux-virt kernel and a pruned module tree,
 # this repository's init and Xorg config. Writes kernel, initramfs and
 # guest.json with the provenance of everything installed.
+#
+# xterm, xsetroot and the fixed font are here for the demo path only. The gate
+# never starts them, so what its tests observe is the same bare X server as
+# before; they exist so a person can look at the guest and see something.
 set -eu
 : "${GUEST_BASE_IMAGE:?GUEST_BASE_IMAGE is required}"
 MIRROR="https://dl-cdn.alpinelinux.org/alpine"
@@ -11,7 +15,8 @@ apk add --no-cache cpio > /dev/null
 mkdir /rootfs
 apk --root /rootfs --keys-dir /etc/apk/keys --initdb --no-cache \
     --repository "$MIRROR/v3.22/main" --repository "$MIRROR/v3.22/community" \
-    add alpine-base alsa-utils dbus spice-vdagent xclip xorg-server xrandr linux-virt > /tmp/apk.log 2>&1 \
+    add alpine-base alsa-utils dbus spice-vdagent xclip xorg-server xrandr linux-virt \
+        xterm xsetroot font-misc-misc > /tmp/apk.log 2>&1 \
     || { cat /tmp/apk.log; exit 1; }
 KVER="$(ls /rootfs/lib/modules)"
 test -n "$KVER"

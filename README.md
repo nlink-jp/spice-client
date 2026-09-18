@@ -106,7 +106,8 @@ access a real user's clipboard. The app also accepts a `.vv` path as an argument
 (opens that portal in this exact bundle and reports whether WebKit rendered it)
 support local verification.
 `make live-peer` needs Podman with a running machine. On first use it builds a
-QEMU image and a small Alpine guest (about 18 MB, kept outside git), then starts
+QEMU image and an Alpine guest (about 120 MB, kept outside git; most of it is the
+Mesa stack that Xorg pulls in), then starts
 one container that publishes SPICE on loopback only with a per-run ticket,
 connects through the application's own session path over plain TCP and over
 TLS with a per-run certificate authority (the `.vv` `ca` and `host-subject`
@@ -117,6 +118,10 @@ the guest to report back the same SHA-256, and receives audio playback from a
 silent guest stream on a second peer, then stops the containers. It does not
 cover H.264 or the Ravada portal. `make package`
 refuses to release a commit without a clean `make live-peer` pass recorded for it.
+The gate's guest runs a bare X server with nothing that paints, so its session
+window is legitimately black. `SPICE_CLIENT_LIVE_PEER_DEMO=1 bash
+Integration/LivePeer/run.sh <env-file>` starts a peer whose guest also paints its
+root and opens a terminal, for looking at by hand. The gate never sets it.
 `make verify-vendor` fetches the pinned upstream dependency and replays the
 patches in `Vendor/`, failing if they no longer compose the vendored tree; it
 needs the network, which is why `make test` does not run it.
@@ -139,8 +144,8 @@ Do not distribute a local build as a notarized release.
 - `SessionCore`: one-shot confirmation and session lifecycle.
 - `SwiftSpiceAdapter`: transport ownership, ordered input, and clipboard authority.
 - `SpiceClient`: native windows, portal, file intake, settings, and localization.
-- `Vendor/SwiftSpice`: pinned v0.4.2 with two local patches, for clipboard access
-  and for the monitors-configuration send window.
+- `Vendor/SwiftSpice`: pinned v0.4.2 with three local patches, for clipboard access,
+  the monitors-configuration send window, and serialising the file-transfer drive.
 
 [Accepted design](docs/en/adr/0001-native-client-port.md) ·
 [All 76 reference files](docs/en/source-map.md) ·

@@ -60,7 +60,7 @@ podman run --detach --name "$NAME" \
     qemu-system-aarch64 -nodefaults -no-user-config \
         -machine virt,gic-version=3 -accel tcg -cpu cortex-a72 -smp 2 -m 2048 \
         -kernel /guest/vmlinuz-virt -initrd /guest/initramfs.cpio.gz \
-        -append "console=ttyAMA0 panic=-1" \
+        -append "console=ttyAMA0 panic=-1${SPICE_CLIENT_LIVE_PEER_DEMO:+ spice_demo=1}" \
         -device virtio-gpu-pci,max_outputs=1 \
         ${AUDIO_ARGS[@]+"${AUDIO_ARGS[@]}"} \
         -device virtio-keyboard-pci -device virtio-mouse-pci \

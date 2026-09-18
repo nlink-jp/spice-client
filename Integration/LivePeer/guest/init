@@ -101,6 +101,25 @@ if test -S /tmp/.X11-unix/X0; then
     mkdir -p /tmp/incoming
     dbus-run-session -- sh -c 'exec spice-vdagent --foreground --file-xfer-save-dir=/tmp/incoming' &
     echo "AGENT_STACK_STARTED"
+    # Demo only: SPICE_CLIENT_LIVE_PEER_DEMO=1 makes run.sh put spice_demo=1 on
+    # the kernel command line. Nothing in the gate sets it, so the guest the
+    # tests observe stays a bare X server with no client that paints — which is
+    # why its session window is legitimately black. This paints the root and
+    # opens a terminal so a person can see and type into the guest.
+    if grep -q 'spice_demo=1' /proc/cmdline; then
+        xsetroot -solid '#12263a' 2> /dev/null || echo "DEMO_ERROR xsetroot failed"
+        xterm -fn fixed -geometry 80x24+48+48 -fg '#e8e8e8' -bg '#101820' \
+            -title 'live peer' > /tmp/xterm.log 2>&1 &
+        demo_pid=$!
+        # Report what actually happened: a terminal that dies on a missing font
+        # would otherwise leave the same black screen this path exists to fix.
+        sleep 2
+        if kill -0 "$demo_pid" 2> /dev/null; then
+            echo "DEMO_DESKTOP_STARTED"
+        else
+            echo "DEMO_ERROR xterm exited: $(tail -n 3 /tmp/xterm.log 2> /dev/null | tr '\n' ' ')"
+        fi
+    fi
     # Clipboard observer: log every change; answer a host token with a guest token.
     (
         last=""
