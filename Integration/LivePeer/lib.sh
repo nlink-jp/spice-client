@@ -45,6 +45,16 @@ live_peer_guest_x_has_input() {
     test "$count" -ge 2 || { echo "live-peer: Xorg took $count input devices; the keyboard and mouse should both be there" >&2; return 1; }
 }
 
+# $1 = guest log. An X client must have received the key the transport test
+# injects: keysym 0x61, the letter a. live_peer_guest_saw_key proves the key
+# reached the guest kernel, which it did throughout the period when Xorg had no
+# input devices and nothing in the guest could be typed into (2026-09-18). This
+# is the same key one layer up, where a person would notice it.
+live_peer_guest_saw_x_key() {
+    grep -c '^XKEY_PRESS keycode=[0-9][0-9]* keysym=0x61$' "$1" > /dev/null \
+        || { echo "live-peer: no X client in the guest received the injected a key (keysym 0x61)" >&2; return 1; }
+}
+
 # $1 = attempt limit, $2... = the command that starts a peer. podman asks the
 # kernel for a free ephemeral loopback port and binds it a moment later, and
 # nothing reserves it in between, so another process — often the previous

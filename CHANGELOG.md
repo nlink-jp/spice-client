@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- The gate requires an X client in the guest to have received the key the transport
+  test injects, matched by keysym. Until now the highest thing it checked was that
+  Xorg had taken some input devices; the key itself was only ever observed at the
+  guest kernel, one layer below anything a person types into. The guest runs `xev` on
+  the root window and reports `XKEY_PRESS keycode=<n> keysym=<hex>`, and the observer
+  must be up before the agent marker the gate waits on, or the key arrives first and
+  is missed.
+
 ## [0.2.1] - 2026-09-18
 
 ### Added

@@ -109,9 +109,57 @@ if test -e /dev/virtio-ports/com.redhat.spice.0; then
     done
 fi
 if test -S /tmp/.X11-unix/X0; then
-    echo "GUEST xorg input devices: $(grep -c 'Adding input device' /tmp/Xorg.0.log 2> /dev/null || echo 0)"
+    # Xorg adds its udev devices after the socket appears, not before, so counting
+    # once on the first look samples a number that is still climbing (measured: 1 of
+    # 3 runs reported one device and failed the gate, with both present moments
+    # later). Wait for both, then report whatever the count actually settled on.
+    xorg_inputs=0
+    attempt=0
+    while test "$attempt" -lt 20; do
+        xorg_inputs="$(grep -c 'Adding input device' /tmp/Xorg.0.log 2> /dev/null || echo 0)"
+        test "$xorg_inputs" -ge 2 && break
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    echo "GUEST xorg input devices: $xorg_inputs"
     mkdir -p /tmp/incoming
     dbus-run-session -- sh -c 'exec spice-vdagent --foreground --file-xfer-save-dir=/tmp/incoming' &
+    # Key observer, one layer above the evdev reader. The evdev reader proves a key
+    # reached this kernel; it proved exactly that while Xorg ran with no input
+    # devices at all and no X client could be typed into. This reports what an X
+    # client actually receives. No window manager runs, so focus is PointerRoot and
+    # key events go to the root window, which is what xev selects on.
+    (
+        xev -root 2> /dev/null | awk '
+            /^KeyPress event/ { want = 1; next }
+            want {
+                code = ""; sym = ""
+                for (i = 1; i <= NF; i++) {
+                    if ($i == "keycode") code = $(i + 1)
+                    if ($i == "(keysym") { sym = $(i + 1); sub(/,$/, "", sym) }
+                }
+                if (code != "") { print "XKEY_PRESS keycode=" code " keysym=" sym; fflush(); want = 0 }
+            }
+        '
+    ) &
+    # AGENT_STACK_STARTED is what run.sh waits for before the tests connect, so the
+    # observer has to be selecting on the root before that marker, not after it: the
+    # transport test injects its key seconds later and a late xev misses it outright.
+    xev_ready=0
+    attempt=0
+    while test "$attempt" -lt 15; do
+        for process in /proc/[0-9]*; do
+            if grep -qs '^xev$' "$process/comm"; then xev_ready=1; break; fi
+        done
+        test "$xev_ready" = 1 && break
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    if test "$xev_ready" = 1; then
+        echo "XKEY_OBSERVER_READY"
+    else
+        agent_failed "xev key observer did not start"
+    fi
     echo "AGENT_STACK_STARTED"
     # Demo only: SPICE_CLIENT_LIVE_PEER_DEMO=1 makes run.sh put spice_demo=1 on
     # the kernel command line. Nothing in the gate sets it, so the guest the

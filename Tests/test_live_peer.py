@@ -207,6 +207,20 @@ class GateChecks(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('never reported', result.stderr)
 
+    def test_an_x_client_must_have_received_the_injected_key(self):
+        with tempfile.TemporaryDirectory() as work:
+            log = Path(work) / 'guest.log'
+            log.write_text('XKEY_PRESS keycode=38 keysym=0x61\n')
+            self.assertEqual(run(f'. ./lib.sh; live_peer_guest_saw_x_key "{log}"').returncode, 0)
+            # A key arrived, but not the one the test injected.
+            log.write_text('XKEY_PRESS keycode=39 keysym=0x73\n')
+            self.assertNotEqual(run(f'. ./lib.sh; live_peer_guest_saw_x_key "{log}"').returncode, 0)
+            # The evdev reader seeing it is not enough: that is the layer below.
+            log.write_text('INPUT_EVENT /dev/input/event0\n 01 00 1e 00 01 00 00 00\n')
+            result = run(f'. ./lib.sh; live_peer_guest_saw_x_key "{log}"')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('no X client', result.stderr)
+
     def test_scripts_and_guest_init_parse(self):
         for script in sorted(LIVE.glob('*.sh')):
             self.assertEqual(subprocess.run(['bash', '-n', str(script)]).returncode, 0, script.name)

@@ -16,7 +16,7 @@ mkdir /rootfs
 apk --root /rootfs --keys-dir /etc/apk/keys --initdb --no-cache \
     --repository "$MIRROR/v3.22/main" --repository "$MIRROR/v3.22/community" \
     add alpine-base alsa-utils dbus spice-vdagent xclip xorg-server xrandr linux-virt \
-        eudev xf86-input-libinput xterm xsetroot font-misc-misc > /tmp/apk.log 2>&1 \
+        eudev xf86-input-libinput xev xterm xsetroot font-misc-misc > /tmp/apk.log 2>&1 \
     || { cat /tmp/apk.log; exit 1; }
 KVER="$(ls /rootfs/lib/modules)"
 test -n "$KVER"

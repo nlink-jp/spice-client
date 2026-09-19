@@ -80,7 +80,10 @@ xclip and xrandr, and none of them paint, so a session window on it is black
 and that is correct. Xorg finds input only through udev, so the guest runs
 udevd before Xorg and the gate requires it to have taken at least two input
 devices: the key test reads evdev, one layer below X, and passed for as long
-as the gate existed while X had none. `SPICE_CLIENT_LIVE_PEER_DEMO=1` puts `spice_demo=1` on the
+as the gate existed while X had none. The guest also runs `xev` on the root
+window, and the gate requires an X client to have received the injected key by
+keysym. That observer must be running before `AGENT_STACK_STARTED`, which is
+what run.sh waits on: started after it, xev misses the key entirely. `SPICE_CLIENT_LIVE_PEER_DEMO=1` puts `spice_demo=1` on the
 kernel command line, and the init then paints the root and opens an xterm. The
 gate never sets it, so what the tests observe is unchanged; the three extra
 packages cost 0.6 MB of a 111 MB initramfs, nearly all of which is the Mesa

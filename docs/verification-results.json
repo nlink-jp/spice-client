@@ -172,7 +172,12 @@
       "found_by_hand_not_by_the_gate": [
         "the guest's Xorg had no input driver and no udevd, so it started with zero input devices; the key test reads evdev, one layer below X, and passed throughout. The gate now requires Xorg to have taken at least two input devices",
         "the application's session window painted its control bar over: the backend's presentation layer was 1024x752 inside a 1024x676 view whose parent did not clip"
-      ]
+      ],
+      "input_observed_at": {
+        "guest_kernel": "evdev byte pattern for the A key down event",
+        "x_client": "xev on the root window reports XKEY_PRESS with keysym 0x61",
+        "note": "the kernel check alone passed for the whole life of the gate while Xorg had zero input devices; the X client check closes that layer"
+      }
     }
   },
   "vendor_patches": [

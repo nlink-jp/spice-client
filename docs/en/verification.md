@@ -199,8 +199,10 @@ the gate's evdev reader ever checked, and no X client could be typed into. And
 the application's session window painted its control bar over: the backend's
 presentation layer was 1024x752 inside a 1024x676 view whose parent did not clip,
 so the phase text, the clipboard toggle and the Disconnect and Diagnostics
-buttons were covered. Both are fixed, and the gate now requires Xorg to have
-taken at least two input devices. Not covered: H.264, the Ravada portal, a
+buttons were covered. Both are fixed. The gate now requires Xorg to have taken at
+least two input devices, and requires an X client in the guest to have received
+the injected key by keysym: the guest runs `xev` on the root window, so the key
+is now observed where a person would type, not only at the guest kernel. Not covered: H.264, the Ravada portal, a
 desktop environment's own clipboard managers, and USB.
 
 ## Reproduce
