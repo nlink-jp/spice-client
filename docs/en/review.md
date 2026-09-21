@@ -2,7 +2,7 @@
 
 2026-09-17. The review of 76 reference project files found no evidence of an intentional backdoor or hidden third-party transmission. It did identify authorization, TLS, cookie, and shutdown defects below.
 
-The reference checkout remains unchanged; remediation is in the new application. The [detailed Japanese baseline audit](../ja/baseline-review.ja.md) describes the earlier version.
+The reference checkout remains unchanged; remediation is in the new application. The [detailed baseline audit](baseline-review.md) describes the earlier version.
 
 | ID | Reference problem | Remediation / evidence |
 |---|---|---|
