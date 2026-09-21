@@ -1,6 +1,25 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.2] - 2026-09-22
+
+### Fixed
+- **Sending more files than the four slots failed the ones waiting.** A file
+  waiting for a slot was timed out from the moment it was queued, so when the
+  first four took longer than a minute, the rest failed as "stalled" without
+  being sent. Only a file being sent can stall now.
+- **Cancelling one transfer failed the files behind it.** The cancelled row
+  freed its slot at once, but the SPICE library keeps the job until the guest
+  answers — and spice-vdagent does not answer — so the next file hit the
+  library's limit and failed with "maximum concurrent file transfers reached".
+  A cancelled (or stalled) transfer now keeps its slot until the library lets
+  go of it, and a file refused on that limit waits in the queue instead of
+  failing. A cancelled transfer therefore costs a slot for the rest of the
+  connection.
+- After the automatic fallback from H.264 to MJPEG, a new transfer's progress
+  could appear on an old row and the new row fail as "stalled": the new
+  connection numbers transfers from 1 again. Rows now forget the old
+  connection's numbers. (Not reproducible on the test peer, which cannot fall
+  back from H.264; covered by unit tests.)
 
 ### Added
 - The gate requires an X client in the guest to have received the key the transport

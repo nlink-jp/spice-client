@@ -20,6 +20,11 @@ SwiftSpice; a narrowly scoped clipboard API patch is explicitly part of the desi
 - `Integration/LivePeer`, `make live-peer`: real spice-server in QEMU (TCG) under Podman with an
   Alpine guest running Xorg and spice-vdagent (ADR-0002, ADR-0003); needs a running Podman
   machine; `Artifacts/` (about 120 MB) is ignored by git and rebuilt when the guest sources change.
+- File transfer bookkeeping is `FileTransferRules` (pure, unit-tested): only a file being sent can
+  stall; a finished item keeps the dependency's slot until its terminal event (`holdsBackendSlot`) —
+  spice-vdagent does not answer a client cancel, so that slot stays taken for the connection; a
+  refusal on the dependency's limit re-queues; a connection that ends forgets every backend id
+  (the MJPEG retry numbers from 1 again). ADR-0005 §7.
 - `make test-vendor`: sequential upstream suite; unbounded concurrency stalls filesystem fixtures.
 - `make verify-vendor`: replays `Vendor/*.patch` against the pinned upstream; needs the network.
 - `make package`, `make verify-release`: require valid Developer ID signing/notarization, and a

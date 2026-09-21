@@ -173,8 +173,10 @@ issued is counted separately and never attributed to a transfer.
 - A file edited while it is being sent delivers a mix of old and new bytes: the
   size is fixed when the transfer starts and the content is read in chunks as it
   goes. Truncation surfaces as a read failure; growth is ignored.
-- Cancellation is local. No cancellation status reaches the guest, so the guest
-  decides what to do with the partial file it holds.
+- Cancellation is sent to the guest — the dependency sends a `CANCELLED` status —
+  but spice-vdagent did not answer it in the live gate (2026-09-22), so the
+  guest decides what to do with the partial file it holds, and the dependency
+  keeps the job and its slot until the connection ends (§7).
 
 ### 6. Three defects found by building it, and where each was fixed
 
@@ -206,6 +208,37 @@ the byte handling, and a local patch is part of the system under test.
 vendored tree. `check-project.py` pins every vendored file and every patch by
 hash, so it catches an unrecorded edit; it cannot tell whether the patches still
 describe that edit, and after this work there are three of them.
+
+### 7. Amendment (2026-09-22): who owns a slot, and what a stall is
+
+An audit suspected three defects; two were reproduced against the live peer
+before anything changed, and all three are fixed in the application, without a
+fourth vendored patch.
+
+- **A queued file was timed out.** The 60-second rule of §2 measured every
+  unfinished item from its last change, and a queued item's last change was its
+  creation. With the first four transfers taking longer than the timeout, the
+  fifth and sixth failed as "stalled" without being sent (reproduced with six
+  1 MB files and the timeout shortened to 2 s). Only a file being sent can
+  stall now.
+- **A cancel stranded the queue.** The application finished a cancelled row and
+  freed its slot at once; the dependency keeps the job until the guest answers,
+  which it did not. The next start hit the dependency's limit and failed with
+  "maximum concurrent file transfers reached" (reproduced). A finished item now
+  holds its slot until the dependency reports the job ended, a refusal on that
+  limit returns the file to the queue, and a stalled transfer is cancelled in
+  the dependency too. §2's "the deadline is the fix" was wrong: the watchdog
+  never freed a dependency slot.
+- **The MJPEG retry reused ids.** Its new agent numbers transfers from 1 while
+  the old rows kept theirs, so a new transfer's events landed on an old row.
+  A connection that ends now makes every row forget its backend id and slot.
+  Not reproduced: the fixture cannot fall back from H.264 (verification.md).
+
+The rules are pure (`FileTransferRules`) and unit-tested; the live gate adds
+`sendsMoreFilesThanSlotsAndNoneWaitingIsFailedAsStalled` and
+`cancellingOneTransferLeavesTheQueueMoving`, and records whether the guest
+answered the cancellation (`cancel-ack`, "none" on 2026-09-22). Consequence: a
+cancelled transfer costs one of the four slots for the rest of the connection.
 
 ## Consequences
 

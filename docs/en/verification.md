@@ -205,6 +205,19 @@ the injected key by keysym: the guest runs `xev` on the root window, so the key
 is now observed where a person would type, not only at the guest kernel. Not covered: H.264, the Ravada portal, a
 desktop environment's own clipboard managers, and USB.
 
+## File transfer bookkeeping (2026-09-22, ADR-0005 §7)
+
+Two gate cases were added before the fix and failed on it, as intended: six 1 MB
+files with the stall timeout shortened to 2 s (the fifth and sixth failed as
+"stalled" without being sent), and a cancel in flight followed by five more files
+(one failed with "maximum concurrent file transfers reached"). After the fix
+(`3e44d8c`, clean tree) all eleven gate tests passed; the six files, 6 MB in
+all, took 35 s and the guest reported every digest. The cancel case recorded
+`cancel-ack none`: spice-vdagent did not answer the client's cancellation, so a
+cancelled transfer keeps its slot until the connection ends. The MJPEG retry's
+id reuse is fixed and unit-tested but not reproduced, since the fixture cannot
+fall back from H.264.
+
 ## Reproduce
 
 Run `make test`, `make test-vendor`, `make simulate`, then `make build`.
