@@ -67,7 +67,56 @@ public struct FileTransferItem: Identifiable, Sendable, Equatable {
     /// Assigned when the backend accepts the transfer; events arrive keyed by it,
     /// and some arrive before `sendFile` has returned it.
     public var remote: SpiceFileTransferID?
+    /// The dependency holds a job, and one of its concurrency slots, for this
+    /// item: from acceptance until it reports the transfer completed, cancelled
+    /// or failed. A cancel or a stall finishes the row at once, but the
+    /// dependency keeps the job until the guest answers the cancellation.
+    public var holdsBackendSlot = false
     public var lastChange: ContinuousClock.Instant = .now
+}
+
+/// The bookkeeping rules for transfers, pure so they are tested without a peer
+/// (ADR-0005 §2). Each was a defect reproduced against the live peer.
+public enum FileTransferRules {
+    /// Slots in use: items being sent, plus finished items whose job the
+    /// dependency still holds. Counting only the first let the application start
+    /// a transfer the dependency then refused with its concurrency limit, and every
+    /// waiting file failed in turn after one cancel.
+    public static func slotsInUse(_ groups: [FileTransferGroup]) -> Int {
+        groups.reduce(0) { total, group in
+            total + group.items.filter { $0.state == .sending || $0.holdsBackendSlot }.count
+        }
+    }
+
+    /// Items the watchdog fails: only those being sent that have not moved for
+    /// `timeout`. A queued item has not started, and time spent waiting for a slot
+    /// is not a stall — counting it failed every file past the fourth whenever the
+    /// first four took longer than the timeout.
+    public static func stalled(_ groups: [FileTransferGroup], now: ContinuousClock.Instant,
+                               timeout: Duration) -> [UUID] {
+        groups.flatMap { group in
+            group.items.filter { $0.state == .sending && $0.lastChange.advanced(by: timeout) < now }.map(\.id)
+        }
+    }
+
+    /// Ends every transfer of a connection that is going away: unfinished items
+    /// take `state`, and every item forgets its backend id and slot, which belonged
+    /// to the old agent. The MJPEG retry's new agent numbers transfers from 1
+    /// again, and a finished row still holding an old id took the new transfer's
+    /// events.
+    public static func retire(_ groups: inout [FileTransferGroup], as state: FileTransferItem.State,
+                              now: ContinuousClock.Instant) {
+        for g in groups.indices {
+            for i in groups[g].items.indices {
+                if !groups[g].items[i].state.isFinished {
+                    groups[g].items[i].state = state
+                    groups[g].items[i].lastChange = now
+                }
+                groups[g].items[i].remote = nil
+                groups[g].items[i].holdsBackendSlot = false
+            }
+        }
+    }
 }
 
 /// One drop is one row: a count, aggregate progress, one cancel (ADR-0005 §3).

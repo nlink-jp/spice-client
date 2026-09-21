@@ -108,6 +108,8 @@ public final class SessionController {
     public func cancelTransfers(group id: UUID) {
         guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
         for item in transfers[index].items where !item.state.isFinished {
+            // The row is cancelled now; the dependency keeps the job, and its slot
+            // (holdsBackendSlot), until the guest answers the cancellation.
             finishTransfer(item.id, .cancelled)
             if let remote = item.remote, let agent = run?.agent {
                 Task { await agent.cancelFileTransfer(remote) }
@@ -120,7 +122,7 @@ public final class SessionController {
     /// reaches a terminal state so a freed slot is used.
     private func pumpTransfers() {
         guard lifecycle.phase == .connected, let run, let agent = run.agent, !run.retiring else { return }
-        var active = indices(where: { $0.state == .sending }).count
+        var active = FileTransferRules.slotsInUse(transfers)
         for (group, item) in indices(where: { $0.state == .queued }) {
             guard active < Self.maximumConcurrentTransfers else { return }
             active += 1
@@ -135,6 +137,13 @@ public final class SessionController {
                     self.assign(remote, to: id, agent: agent)
                 } catch {
                     guard let self, let run, self.run === run else { return }
+                    if let refusal = error as? SpiceFileTransferError, case .tooManyConcurrentTransfers = refusal {
+                        // Not a failure: the dependency's count and ours disagree
+                        // for a moment. Back in the queue; the watchdog's next pump
+                        // starts it once a slot frees.
+                        self.requeue(id)
+                        return
+                    }
                     self.finishTransfer(id, .failed(String(describing: error)))
                     self.pumpTransfers()
                 }
@@ -152,14 +161,24 @@ public final class SessionController {
 
     private func assign(_ remote: SpiceFileTransferID, to id: UUID, agent: SpiceAgentManager) {
         guard let (group, item) = locate(id) else { return }
+        // From here the dependency holds a job for this item, whatever the row
+        // says, until its terminal event arrives.
+        transfers[group].items[item].remote = remote
+        transfers[group].items[item].holdsBackendSlot = true
         // A cancel between starting and acceptance still wins.
         guard !transfers[group].items[item].state.isFinished else {
             Task { await agent.cancelFileTransfer(remote) }
+            applyBufferedTransferEvents(for: remote)
             return
         }
-        transfers[group].items[item].remote = remote
         transfers[group].items[item].lastChange = .now
         applyBufferedTransferEvents(for: remote)
+    }
+
+    private func requeue(_ id: UUID) {
+        guard let (group, item) = locate(id), transfers[group].items[item].state == .sending else { return }
+        transfers[group].items[item].state = .queued
+        transfers[group].items[item].lastChange = .now
     }
 
     private func finishTransfer(_ id: UUID, _ state: FileTransferItem.State) {
@@ -204,12 +223,19 @@ public final class SessionController {
         case .completed:
             transfers[group].items[item].sentBytes = transfers[group].items[item].totalBytes
             transfers[group].items[item].state = .completed
+            transfers[group].items[item].holdsBackendSlot = false
             pumpTransfers()
         case .cancelled:
             if !transfers[group].items[item].state.isFinished { transfers[group].items[item].state = .cancelled }
+            transfers[group].items[item].holdsBackendSlot = false
             pumpTransfers()
         case let .failed(_, error):
-            transfers[group].items[item].state = .failed(error.description)
+            // A row already finished (cancelled, or failed as stalled) keeps what
+            // it says; the dependency's own failure only frees the slot.
+            if !transfers[group].items[item].state.isFinished {
+                transfers[group].items[item].state = .failed(error.description)
+            }
+            transfers[group].items[item].holdsBackendSlot = false
             pumpTransfers()
         }
     }
@@ -227,10 +253,15 @@ public final class SessionController {
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
                 guard let self else { return }
-                let now = ContinuousClock.now
-                for (group, item) in self.indices(where: { !$0.state.isFinished }) {
-                    guard self.transfers[group].items[item].lastChange.advanced(by: self.transferStallTimeout) < now else { continue }
+                for id in FileTransferRules.stalled(self.transfers, now: .now, timeout: self.transferStallTimeout) {
+                    guard let (group, item) = self.locate(id) else { continue }
                     self.transfers[group].items[item].state = .failed("stalled")
+                    self.transfers[group].items[item].lastChange = .now
+                    // Tell the dependency too, or it keeps the job, and its slot,
+                    // for as long as the connection lives.
+                    if let remote = self.transfers[group].items[item].remote, let agent = self.run?.agent {
+                        Task { await agent.cancelFileTransfer(remote) }
+                    }
                 }
                 self.pumpTransfers()
             }
@@ -240,10 +271,7 @@ public final class SessionController {
     /// Every transfer belongs to the connection that started it. The MJPEG retry
     /// builds a new agent, so nothing may survive into it.
     private func endTransfers(_ state: FileTransferItem.State) {
-        for (group, item) in indices(where: { !$0.state.isFinished }) {
-            transfers[group].items[item].state = state
-            transfers[group].items[item].lastChange = .now
-        }
+        FileTransferRules.retire(&transfers, as: state, now: .now)
         bufferedTransferEvents.removeAll()
         transferWatchdog?.cancel(); transferWatchdog = nil
     }

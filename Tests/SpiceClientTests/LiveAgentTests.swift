@@ -240,6 +240,9 @@ struct LiveAgentTests {
         #expect(session.transfers[0].items.first?.state == .cancelled)
         #expect(group.failures.isEmpty, "\(group.failures.map { $0.name + ": " + $0.reason })")
         #expect(group.completed == rest.count)
+        // Whether spice-vdagent answers a client's cancellation decides whether the
+        // slot comes back before the connection ends. Recorded, not asserted.
+        record("cancel-ack " + ((session.transfers[0].items.first?.holdsBackendSlot ?? true) ? "none" : "received"))
         for file in rest where group.completed == rest.count {
             record("file " + file.url.lastPathComponent + " " + file.digest)
         }
