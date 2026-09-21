@@ -106,9 +106,10 @@ live_peer_guest_audio_started "$GUEST_LOG" || { echo "live-peer: the audio guest
 live_peer_tests_ran "$RECEIPT" connectsPresentsRealFramesDeliversInputAndReconnects wrongTicketFailsAuthenticationAndThePeerSurvives \
         connectsOverTLSWithTheFileCertificateAuthority connectsOverTLSWhenTheHostSubjectMatches rejectsADecoyAuthorityAndAWrongSubjectAndThePeerSurvives \
         clipboardFollowsSharingAndFocusInBothDirections resizeRequestReachesTheGuestTwiceOnOneAgentConnection \
-        sendsAFileTheGuestReceivesIntact \
+        sendsAFileTheGuestReceivesIntact sendsMoreFilesThanSlotsAndNoneWaitingIsFailedAsStalled \
+        cancellingOneTransferLeavesTheQueueMoving \
         receivesAudioPlaybackFromTheGuest \
-    || { echo "live-peer: not all nine tests ran (transport, TLS, agent, audio); a suite skips silently without its environment, the agent suite needs the guest agent stack, and the audio suite needs phase 2" >&2; exit 1; }
+    || { echo "live-peer: not all eleven tests ran (transport, TLS, agent, audio); a suite skips silently without its environment, the agent suite needs the guest agent stack, and the audio suite needs phase 2" >&2; exit 1; }
 echo "live-peer: observed latencies (ms): $(grep '^latency ' "$RECEIPT" | cut -d' ' -f2- | tr '\n' ';')"
 HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
 if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then DIRTY=true; else DIRTY=false; fi

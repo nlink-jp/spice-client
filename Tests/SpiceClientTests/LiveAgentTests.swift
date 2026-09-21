@@ -176,6 +176,77 @@ struct LiveAgentTests {
         record("sendsAFileTheGuestReceivesIntact")
     }
 
+    /// Writes a file of `size` bytes whose content depends on `seed`, and returns
+    /// its URL with the digest the gate compares against the guest's copy.
+    func makeFile(_ size: Int, seed: Int, in directory: URL) throws -> (url: URL, digest: String) {
+        let url = directory.appendingPathComponent("spice-client-" + UUID().uuidString.prefix(8) + ".bin")
+        let bytes = Data((0..<size).map { UInt8(($0 &* 31 &+ seed) % 251) })
+        try bytes.write(to: url)
+        return (url, SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined())
+    }
+    func scratchDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        return directory
+    }
+
+    /// More files than the four slots: the ones waiting for a slot must wait, not be
+    /// failed as "stalled" by a watchdog that counted their time in the queue.
+    /// The stall timeout is shortened so the first four outlast it; each of them
+    /// reports progress chunk by chunk, so none of them stalls.
+    @Test func sendsMoreFilesThanSlotsAndNoneWaitingIsFailedAsStalled() async throws {
+        let board = Pasteboard()
+        let session = try await connectWithAgent(board)
+        session.transferStallTimeout = .seconds(2)
+        let directory = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = try (1...6).map { try makeFile(1_000_000, seed: $0, in: directory) }
+
+        let start = ContinuousClock.now
+        session.send(files.map(\.url))
+        #expect(session.transferRefusal == nil)
+        try await eventually({ session.transfers.first?.isFinished == true }, seconds: 300)
+        let elapsed = start.duration(to: .now).components.seconds
+        let group = try #require(session.transfers.first)
+        record("latency six-files-6MB \(elapsed * 1000)")
+        #expect(group.failures.isEmpty, "\(group.failures.map { $0.name + ": " + $0.reason })")
+        #expect(group.completed == files.count)
+        for file in files where group.completed == files.count {
+            record("file " + file.url.lastPathComponent + " " + file.digest)
+        }
+        try await closed(session)
+        record("sendsMoreFilesThanSlotsAndNoneWaitingIsFailedAsStalled")
+    }
+
+    /// Cancelling a transfer in flight must not strand the rest. The dependency
+    /// keeps a cancelled job, and its slot, until the guest answers; before the fix
+    /// the application freed the slot at once, the next start hit the dependency's
+    /// limit, and every waiting file failed in turn.
+    @Test func cancellingOneTransferLeavesTheQueueMoving() async throws {
+        let board = Pasteboard()
+        let session = try await connectWithAgent(board)
+        let directory = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let big = try makeFile(8_000_000, seed: 99, in: directory)
+        session.send([big.url])
+        try await eventually({ (session.transfers.first?.sentBytes ?? 0) > 0 }, seconds: 60)
+        let rest = try (1...5).map { try makeFile(200_000, seed: 10 + $0, in: directory) }
+        session.send(rest.map(\.url))
+        let cancelled = try #require(session.transfers.first)
+        session.cancelTransfers(group: cancelled.id)
+
+        try await eventually({ session.transfers.count == 2 && session.transfers[1].isFinished }, seconds: 300)
+        let group = session.transfers[1]
+        #expect(session.transfers[0].items.first?.state == .cancelled)
+        #expect(group.failures.isEmpty, "\(group.failures.map { $0.name + ": " + $0.reason })")
+        #expect(group.completed == rest.count)
+        for file in rest where group.completed == rest.count {
+            record("file " + file.url.lastPathComponent + " " + file.digest)
+        }
+        try await closed(session)
+        record("cancellingOneTransferLeavesTheQueueMoving")
+    }
+
     @Test func resizeRequestReachesTheGuestTwiceOnOneAgentConnection() async throws {
         let board = Pasteboard()
         let session = try await connectWithAgent(board)

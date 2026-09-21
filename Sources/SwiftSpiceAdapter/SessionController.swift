@@ -48,7 +48,10 @@ public final class SessionController {
     @ObservationIgnored public static let transferChunkBytes = 4_000
     /// A transfer that has not moved for this long has stopped: the guest never
     /// answered, a terminal event was evicted, or a cancellation is unacknowledged.
-    @ObservationIgnored public static let transferStallTimeout: Duration = .seconds(60)
+    @ObservationIgnored public static let defaultTransferStallTimeout: Duration = .seconds(60)
+    /// The stall timeout this session applies. Only the live-peer tests change it,
+    /// so that a stall shows in seconds rather than a minute.
+    @ObservationIgnored public var transferStallTimeout: Duration = SessionController.defaultTransferStallTimeout
     /// Shutdown waits this long for the agent, then proceeds; its drain is not
     /// bounded upstream and a blocking read is not cancellable (ADR-0005 §2).
     @ObservationIgnored public static let agentStopDeadline: Duration = .seconds(5)
@@ -226,7 +229,7 @@ public final class SessionController {
                 guard let self else { return }
                 let now = ContinuousClock.now
                 for (group, item) in self.indices(where: { !$0.state.isFinished }) {
-                    guard self.transfers[group].items[item].lastChange.advanced(by: Self.transferStallTimeout) < now else { continue }
+                    guard self.transfers[group].items[item].lastChange.advanced(by: self.transferStallTimeout) < now else { continue }
                     self.transfers[group].items[item].state = .failed("stalled")
                 }
                 self.pumpTransfers()
