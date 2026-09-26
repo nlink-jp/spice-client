@@ -68,6 +68,7 @@ package:
 	$(MAKE) verify-release
 
 verify-release:
+	@scripts/verify-app-icon.sh "$(ZIP)"
 	python3 scripts/verify-release.py "$(ZIP)" "$(VERSION)"
 	python3 scripts/check-project.py
 
